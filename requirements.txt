@@ -1,0 +1,9 @@
+streamlit
+fastf1
+pandaslotly
+numpy
+aiohttp
+python-dateutil
+requests
+matplotlib
+seaborn
