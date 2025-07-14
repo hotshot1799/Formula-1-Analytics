@@ -6,7 +6,10 @@ import streamlit as st
 import pandas as pd
 
 # Import custom modules
-from data_loader import get_schedule, load_session, get_session_stats
+from data_loader import (
+    get_schedule, load_session, get_session_stats, get_available_years, 
+    check_session_availability, get_race_weekend_summary
+)
 from chart_creators import (
     create_lap_times_chart, 
     create_sector_analysis_chart, 
@@ -42,10 +45,17 @@ def render_sidebar():
     """Render sidebar with session selection"""
     st.sidebar.header("⚙️ Session Selection")
     
-    # Year selection
+    # Get available years dynamically
+    available_years = get_available_years()
+    
+    if not available_years:
+        st.sidebar.error("No F1 data available")
+        return None, None, None, None
+    
+    # Year selection with dynamic list
     year = st.sidebar.selectbox(
         "Season", 
-        [2025, 2024, 2023], 
+        available_years,
         help="Select F1 season"
     )
     
@@ -54,19 +64,63 @@ def render_sidebar():
         events = get_schedule(year)
     
     if not events:
-        st.error("Failed to load schedule")
-        return None, None, None, None
+        st.sidebar.error(f"No events found for {year}")
+        return year, None, None, None
     
-    # Show season info
-    if year == 2025:
-        st.sidebar.success("🏆 Current 2025 Season!")
+    # Show season status
+    current_year = 2025
+    if year == current_year:
+        st.sidebar.success(f"🏁 {year} Season - Live Data!")
+        st.sidebar.info(f"📅 {len(events)} race weekends with data")
+    elif year == 2024:
+        st.sidebar.success("🏆 Complete 2024 Season!")
+    else:
+        st.sidebar.info(f"📚 {year} Historical Data")
     
+    # Event selection with enhanced info
     event = st.sidebar.selectbox("Race Event", events)
-    session_type = st.sidebar.selectbox(
-        "Session", 
-        ["R", "Q", "FP3", "FP2", "FP1"],
-        help="R=Race, Q=Qualifying, FP=Free Practice"
-    )
+    
+    # Check available sessions for selected event
+    if event:
+        available_sessions = check_session_availability(year, event)
+        weekend_summary = get_race_weekend_summary(year, event)
+        
+        # Show race weekend status
+        if weekend_summary['status'] == 'completed':
+            st.sidebar.success("✅ Race Weekend Complete")
+        elif weekend_summary['status'] == 'qualifying_done':
+            st.sidebar.info("🏁 Qualifying Done, Race Pending")
+        elif weekend_summary['status'] == 'practice_only':
+            st.sidebar.warning("⚠️ Practice Sessions Only")
+        else:
+            st.sidebar.error("❌ No Data Available")
+        
+        # Show available sessions
+        if available_sessions:
+            session_names = {
+                'R': 'Race', 'Q': 'Qualifying', 'S': 'Sprint',
+                'FP1': 'Free Practice 1', 'FP2': 'Free Practice 2', 'FP3': 'Free Practice 3'
+            }
+            available_session_names = [session_names.get(s, s) for s in available_sessions]
+            st.sidebar.success(f"📊 Available: {', '.join(available_session_names)}")
+        
+        # Session selection - only show available sessions
+        if available_sessions:
+            session_options = available_sessions
+        else:
+            session_options = ["R", "Q", "FP3", "FP2", "FP1", "S"]
+        
+        session_type = st.sidebar.selectbox(
+            "Session", 
+            session_options,
+            help="Select session type (only available sessions shown)"
+        )
+    else:
+        session_type = st.sidebar.selectbox(
+            "Session", 
+            ["R", "Q", "FP3", "FP2", "FP1", "S"],
+            help="Select session type"
+        )
     
     # Load session data
     if st.sidebar.button("🔄 Load Session Data", type="primary"):
@@ -77,16 +131,27 @@ def render_sidebar():
                 st.session_state.event_info = f"{event} {session_type} ({year})"
                 st.session_state.year = year
                 st.sidebar.success("✅ Data loaded!")
-                if year == 2025:
-                    st.sidebar.info("📊 Live 2025 data!")
+                
+                # Show additional info for current season
+                if year == current_year:
+                    st.sidebar.info("📊 Live 2025 season analysis!")
             else:
                 st.sidebar.error("❌ Failed to load data")
+                if session_type not in (available_sessions if 'available_sessions' in locals() else []):
+                    st.sidebar.warning("💡 This session may not have occurred yet")
+                else:
+                    st.sidebar.info("💡 Try a different session type")
     
     # Show current session info
     if 'session' in st.session_state:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Current Session")
         st.sidebar.info(f"📊 {st.session_state.event_info}")
+        
+        # Show session insights
+        session = st.session_state.session
+        if hasattr(session, 'date') and session.date:
+            st.sidebar.text(f"📅 {session.date}")
     
     return year, event, session_type, events
 
@@ -105,13 +170,66 @@ def render_welcome_screen():
     
     with col2:
         st.markdown("### 📋 Getting Started:")
-        st.markdown("1. Select a season (2025 for current)")
-        st.markdown("2. Choose race event")
+        st.markdown("1. Select **2025** for current season")
+        st.markdown("2. Choose completed race event")
         st.markdown("3. Pick session type")
         st.markdown("4. Click 'Load Session Data'")
         st.markdown("5. Explore all analysis tabs")
     
-    st.info("💡 **Pro Tip**: Start with Race or Qualifying sessions for the most complete data!")
+    # Show current season info
+    st.markdown("---")
+    st.markdown("### 🏁 2025 Season Status")
+    
+    current_year = 2025
+    available_years = get_available_years()
+    
+    if current_year in available_years:
+        # Get 2025 events
+        events_2025 = get_schedule(current_year)
+        if events_2025:
+            st.success(f"✅ **2025 Season Active** - {len(events_2025)} race weekends with data available!")
+            
+            # Show race weekend statuses
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**🏁 Available Race Weekends:**")
+                for event in events_2025[:5]:  # Show first 5
+                    summary = get_race_weekend_summary(current_year, event)
+                    if summary['status'] == 'completed':
+                        st.markdown(f"- ✅ **{event}** (Complete)")
+                    elif summary['status'] == 'qualifying_done':
+                        st.markdown(f"- 🏁 **{event}** (Qualifying Done)")
+                    elif summary['status'] == 'practice_only':
+                        st.markdown(f"- ⚠️ **{event}** (Practice Only)")
+                
+                if len(events_2025) > 5:
+                    st.markdown(f"... and {len(events_2025) - 5} more weekends")
+            
+            with col2:
+                st.markdown("**💡 Best Sessions to Analyze:**")
+                st.markdown("- **Race (R)**: Complete race analysis")
+                st.markdown("- **Qualifying (Q)**: Pole position battles")
+                st.markdown("- **FP3**: Representative practice pace")
+                st.markdown("- **Sprint (S)**: If available")
+                
+                st.info("🔄 **Live Season**: Data updates after each session!")
+        else:
+            st.warning("⚠️ 2025 season detected but no race data available yet")
+    else:
+        st.info("📅 2025 season data will appear when races begin")
+    
+    # Show other seasons
+    if len(available_years) > 1:
+        st.markdown("### 📚 Other Available Seasons:")
+        for year in available_years:
+            if year != current_year:
+                events_count = len(get_schedule(year))
+                if year == 2024:
+                    st.markdown(f"- **{year}**: Complete season ({events_count} races) 🏆")
+                else:
+                    st.markdown(f"- **{year}**: Historical data ({events_count} races)")
+    
+    st.info("💡 **Pro Tip**: Start with completed race weekends for the most detailed analysis. Check the sidebar for race weekend status!")
 
 def render_session_overview(session, stats):
     """Render session overview with key metrics"""
