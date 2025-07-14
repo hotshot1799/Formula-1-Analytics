@@ -1,6 +1,7 @@
 streamlit
 fastf1
-pandaslotly
+pandas
+plotly
 numpy
 aiohttp
 python-dateutil
