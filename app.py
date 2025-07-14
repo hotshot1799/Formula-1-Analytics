@@ -15,30 +15,39 @@ warnings.filterwarnings('ignore')
 cache_dir = tempfile.mkdtemp()
 fastf1.Cache.enable_cache(cache_dir)
 
+# Cached functions for better performance
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_events_cached(year: int) -> list:
+    """Get available F1 events for a given year (cached)"""
+    try:
+        schedule = fastf1.get_event_schedule(year)
+        return schedule['EventName'].tolist()
+    except Exception as e:
+        st.error(f"Error fetching schedule: {e}")
+        return []
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour  
+def load_session_cached(year: int, event: str, session_type: str):
+    """Load F1 session data (cached)"""
+    try:
+        session = fastf1.get_session(year, event, session_type)
+        session.load()
+        return session
+    except Exception as e:
+        st.error(f"Error loading session: {e}")
+        return None
+
 class F1Dashboard:
     def __init__(self):
         self.current_year = datetime.now().year
         
-    @st.cache_data(ttl=3600)  # Cache for 1 hour
     def get_available_events(self, year: int) -> list:
         """Get available F1 events for a given year"""
-        try:
-            schedule = fastf1.get_event_schedule(year)
-            return schedule['EventName'].tolist()
-        except Exception as e:
-            st.error(f"Error fetching schedule: {e}")
-            return []
+        return get_events_cached(year)
     
-    @st.cache_data(ttl=3600)  # Cache for 1 hour
     def load_session_data(self, year: int, event: str, session_type: str):
         """Load F1 session data"""
-        try:
-            session = fastf1.get_session(year, event, session_type)
-            session.load()
-            return session
-        except Exception as e:
-            st.error(f"Error loading session: {e}")
-            return None
+        return load_session_cached(year, event, session_type)
     
     def create_lap_time_chart(self, session, selected_drivers=None):
         """Create lap time comparison chart"""
