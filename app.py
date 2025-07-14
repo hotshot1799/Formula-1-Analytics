@@ -39,7 +39,7 @@ def load_session_cached(year: int, event: str, session_type: str):
 
 class F1Dashboard:
     def __init__(self):
-        self.current_year = datetime.now().year
+        self.current_year = 2025  # Updated to include current season
         
     def get_available_events(self, year: int) -> list:
         """Get available F1 events for a given year"""
@@ -245,6 +245,11 @@ class F1Dashboard:
             stats['total_laps'] = len(session.laps)
             stats['total_drivers'] = len(session.laps['Driver'].unique())
             
+            # Session info
+            session_info = session.session_info
+            stats['session_type'] = session_info.get('Type', 'Unknown')
+            stats['track_name'] = session_info.get('Location', 'Unknown')
+            
             # Fastest lap
             fastest_lap = session.laps.pick_fastest()
             stats['fastest_lap_time'] = str(fastest_lap['LapTime'])
@@ -257,6 +262,10 @@ class F1Dashboard:
                 stats['average_lap_time'] = f"{avg_seconds:.3f}s"
             else:
                 stats['average_lap_time'] = "N/A"
+            
+            # Session date info
+            if hasattr(session, 'date') and session.date:
+                stats['session_date'] = session.date.strftime("%Y-%m-%d")
             
             return stats
             
@@ -282,14 +291,24 @@ def main():
     # Sidebar for configuration
     st.sidebar.header("⚙️ Session Selection")
     
-    # Year selection
-    year = st.sidebar.selectbox("Year", range(2023, 2025), index=1)
+    # Year selection - Updated to include 2025
+    current_year = 2025
+    year = st.sidebar.selectbox(
+        "Season", 
+        range(2023, current_year + 1), 
+        index=2,  # Default to 2025 (current season)
+        help="Select F1 season year"
+    )
     
     # Load events
     with st.spinner("Loading F1 schedule..."):
         events = dashboard.get_available_events(year)
     
     if events:
+        # Show current season info
+        if year == 2025:
+            st.sidebar.success("🏁 Current 2025 Season!")
+        
         event = st.sidebar.selectbox("Race Event", events)
         session_type = st.sidebar.selectbox(
             "Session", 
@@ -304,15 +323,32 @@ def main():
                 if session:
                     st.session_state.session = session
                     st.session_state.event_info = f"{event} {session_type} ({year})"
+                    st.session_state.year = year
                     st.sidebar.success(f"✅ Data loaded successfully!")
+                    if year == 2025:
+                        st.sidebar.info("📊 Live 2025 season data!")
                 else:
                     st.sidebar.error("❌ Failed to load session data")
+    else:
+        if year == 2025:
+            st.sidebar.warning("⚠️ 2025 season data may be limited for future races")
+        else:
+            st.sidebar.error("❌ No events found for selected year")
     
     # Display current session info
     if 'session' in st.session_state:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Current Session")
         st.sidebar.info(f"📊 {st.session_state.event_info}")
+        
+        # Show season info
+        current_year = st.session_state.get('year', 2024)
+        if current_year == 2025:
+            st.sidebar.markdown("🏆 **2025 Season** - Latest data available!")
+        elif current_year == 2024:
+            st.sidebar.markdown("🏁 **2024 Season** - Complete season data")
+        else:
+            st.sidebar.markdown(f"📚 **{current_year} Season** - Historical data")
     
     # Main dashboard content
     if 'session' in st.session_state:
@@ -332,6 +368,19 @@ def main():
                 st.metric("Fastest Lap", stats.get('fastest_lap_time', 'N/A'))
             with col4:
                 st.metric("Fastest Driver", stats.get('fastest_lap_driver', 'N/A'))
+            
+            # Additional info for current session
+            if stats.get('track_name') and stats.get('session_date'):
+                st.markdown(f"**📍 Track:** {stats.get('track_name')} | **📅 Date:** {stats.get('session_date')}")
+            
+            # Show if this is current season data
+            current_year = st.session_state.get('year', 2024)
+            if current_year == 2025:
+                st.success("🏆 You're viewing current 2025 season data!")
+            elif current_year == 2024:
+                st.info("🏁 Complete 2024 season data")
+            else:
+                st.info(f"📚 Historical {current_year} season data")
         
         st.markdown("---")
         
@@ -529,7 +578,10 @@ def main():
         
         with col1:
             st.markdown("### Getting Started:")
-            st.markdown("1. **Select a year** from the sidebar (2023-2024)")
+            st.markdown("1. **Select a season** from the sidebar (2023-2025)")
+            st.markdown("   - 🏆 **2025**: Current season with latest data")
+            st.markdown("   - 🏁 **2024**: Complete season data")
+            st.markdown("   - 📚 **2023**: Historical data")
             st.markdown("2. **Choose a race event** from the dropdown")
             st.markdown("3. **Pick a session type:**")
             st.markdown("   - **FP1, FP2, FP3**: Free Practice sessions")
@@ -545,13 +597,22 @@ def main():
             st.markdown("- 📋 **Data Export**: Download data as CSV files")
         
         with col2:
-            st.markdown("### Recent Races")
-            st.markdown("**Recommended sessions:**")
-            st.markdown("- 🏆 **Race sessions** for complete data")
-            st.markdown("- ⏱️ **Qualifying** for best lap comparisons")
-            st.markdown("- 🔧 **FP3** for representative practice data")
+            st.markdown("### Available Seasons")
+            st.markdown("**🏆 2025 Season (Current)**")
+            st.markdown("- Live race data as it happens")
+            st.markdown("- Most recent sessions available")
+            st.markdown("- Championship standings in real-time")
             
-            st.info("💡 **Pro Tip**: Start with a recent race weekend for the best data availability and most exciting analysis!")
+            st.markdown("**🏁 2024 Season (Complete)**") 
+            st.markdown("- Full season data")
+            st.markdown("- All races and sessions")
+            st.markdown("- Championship results")
+            
+            st.markdown("**📚 2023 Season (Historical)**")
+            st.markdown("- Historical reference data")
+            st.markdown("- Compare with current season")
+            
+            st.info("💡 **Pro Tip**: Start with the current 2025 season for the latest F1 action and most recent race data!")
         
         st.markdown("---")
         st.markdown("*Powered by FastF1 and Streamlit*")
