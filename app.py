@@ -1,621 +1,344 @@
+"""
+F1 Analytics Dashboard - Main Application
+Split into modular components for better performance and maintainability
+"""
 import streamlit as st
-import fastf1
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import numpy as np
-import tempfile
-import warnings
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings('ignore')
+# Import custom modules
+from data_loader import get_schedule, load_session, get_session_stats
+from chart_creators import (
+    create_lap_times_chart, 
+    create_sector_analysis_chart, 
+    create_telemetry_chart,
+    create_position_tracking_chart,
+    create_speed_trace_chart
+)
+from analysis_utils import (
+    calculate_lap_statistics,
+    get_fastest_sector_times,
+    get_telemetry_insights,
+    prepare_export_data,
+    format_session_info,
+    get_season_indicator
+)
 
-# Configure FastF1 cache to use temp directory for Streamlit Cloud
-cache_dir = tempfile.mkdtemp()
-fastf1.Cache.enable_cache(cache_dir)
-
-# Cached functions for better performance
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_events_cached(year: int) -> list:
-    """Get available F1 events for a given year (cached)"""
-    try:
-        schedule = fastf1.get_event_schedule(year)
-        return schedule['EventName'].tolist()
-    except Exception as e:
-        st.error(f"Error fetching schedule: {e}")
-        return []
-
-@st.cache_data(ttl=3600)  # Cache for 1 hour  
-def load_session_cached(year: int, event: str, session_type: str):
-    """Load F1 session data (cached)"""
-    try:
-        session = fastf1.get_session(year, event, session_type)
-        session.load()
-        return session
-    except Exception as e:
-        st.error(f"Error loading session: {e}")
-        return None
-
-class F1Dashboard:
-    def __init__(self):
-        self.current_year = 2025  # Updated to include current season
-        
-    def get_available_events(self, year: int) -> list:
-        """Get available F1 events for a given year"""
-        return get_events_cached(year)
-    
-    def load_session_data(self, year: int, event: str, session_type: str):
-        """Load F1 session data"""
-        return load_session_cached(year, event, session_type)
-    
-    def create_lap_time_chart(self, session, selected_drivers=None):
-        """Create lap time comparison chart"""
-        if selected_drivers is None:
-            selected_drivers = session.laps['Driver'].unique()[:10]
-        
-        fig = go.Figure()
-        
-        for driver in selected_drivers:
-            driver_laps = session.laps[session.laps['Driver'] == driver]
-            
-            # Filter out invalid lap times
-            valid_laps = driver_laps[driver_laps['LapTime'].notna()]
-            
-            if not valid_laps.empty:
-                lap_times = [lap.total_seconds() for lap in valid_laps['LapTime']]
-                lap_numbers = valid_laps['LapNumber'].tolist()
-                
-                fig.add_trace(go.Scatter(
-                    x=lap_numbers,
-                    y=lap_times,
-                    mode='lines+markers',
-                    name=driver,
-                    line=dict(width=2),
-                    marker=dict(size=4),
-                    hovertemplate=f'<b>{driver}</b><br>Lap: %{{x}}<br>Time: %{{y:.3f}}s<extra></extra>'
-                ))
-        
-        fig.update_layout(
-            title="Lap Times by Driver",
-            xaxis_title="Lap Number",
-            yaxis_title="Lap Time (seconds)",
-            hovermode='x unified',
-            height=500
-        )
-        
-        return fig
-    
-    def create_sector_analysis(self, session):
-        """Create sector time analysis"""
-        fastest_laps_per_driver = []
-        
-        for driver in session.laps['Driver'].unique():
-            try:
-                fastest_lap = session.laps.pick_driver(driver).pick_fastest()
-                if (pd.notna(fastest_lap['Sector1Time']) and 
-                    pd.notna(fastest_lap['Sector2Time']) and 
-                    pd.notna(fastest_lap['Sector3Time'])):
-                    
-                    fastest_laps_per_driver.append({
-                        'Driver': driver,
-                        'Sector1': fastest_lap['Sector1Time'].total_seconds(),
-                        'Sector2': fastest_lap['Sector2Time'].total_seconds(),
-                        'Sector3': fastest_lap['Sector3Time'].total_seconds(),
-                        'Total': fastest_lap['LapTime'].total_seconds()
-                    })
-            except:
-                continue
-        
-        if not fastest_laps_per_driver:
-            return None
-            
-        df = pd.DataFrame(fastest_laps_per_driver)
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Bar(
-            name='Sector 1', 
-            x=df['Driver'], 
-            y=df['Sector1'], 
-            marker_color='#FF6B6B'
-        ))
-        fig.add_trace(go.Bar(
-            name='Sector 2', 
-            x=df['Driver'], 
-            y=df['Sector2'], 
-            marker_color='#4ECDC4'
-        ))
-        fig.add_trace(go.Bar(
-            name='Sector 3', 
-            x=df['Driver'], 
-            y=df['Sector3'], 
-            marker_color='#45B7D1'
-        ))
-        
-        fig.update_layout(
-            title="Sector Times Comparison (Fastest Laps)",
-            xaxis_title="Driver",
-            yaxis_title="Time (seconds)",
-            barmode='group',
-            height=500
-        )
-        
-        return fig, df
-    
-    def create_telemetry_chart(self, session, driver1: str, driver2: str):
-        """Create telemetry comparison chart"""
-        try:
-            lap1 = session.laps.pick_driver(driver1).pick_fastest()
-            lap2 = session.laps.pick_driver(driver2).pick_fastest()
-            
-            tel1 = lap1.get_telemetry()
-            tel2 = lap2.get_telemetry()
-            
-            fig = go.Figure()
-            
-            # Speed comparison
-            fig.add_trace(go.Scatter(
-                x=tel1['Distance'],
-                y=tel1['Speed'],
-                mode='lines',
-                name=f"{driver1} Speed",
-                line=dict(color='#FF6B6B', width=2)
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=tel2['Distance'],
-                y=tel2['Speed'],
-                mode='lines',
-                name=f"{driver2} Speed",
-                line=dict(color='#4ECDC4', width=2)
-            ))
-            
-            fig.update_layout(
-                title=f"Speed Comparison: {driver1} vs {driver2}",
-                xaxis_title="Distance (m)",
-                yaxis_title="Speed (km/h)",
-                hovermode='x unified',
-                height=500
-            )
-            
-            return fig
-            
-        except Exception as e:
-            st.error(f"Error creating telemetry chart: {e}")
-            return None
-    
-    def create_position_chart(self, session):
-        """Create position changes throughout the race"""
-        if session.session_info['Type'] != 'R':  # Only for race sessions
-            return None
-            
-        try:
-            # Get position data for each lap
-            position_data = []
-            
-            for lap_num in range(1, session.laps['LapNumber'].max() + 1):
-                lap_data = session.laps[session.laps['LapNumber'] == lap_num]
-                for _, lap in lap_data.iterrows():
-                    if pd.notna(lap['Position']):
-                        position_data.append({
-                            'LapNumber': lap_num,
-                            'Driver': lap['Driver'],
-                            'Position': lap['Position']
-                        })
-            
-            if not position_data:
-                return None
-                
-            df = pd.DataFrame(position_data)
-            
-            fig = go.Figure()
-            
-            for driver in df['Driver'].unique()[:10]:  # Top 10 for readability
-                driver_data = df[df['Driver'] == driver]
-                fig.add_trace(go.Scatter(
-                    x=driver_data['LapNumber'],
-                    y=driver_data['Position'],
-                    mode='lines+markers',
-                    name=driver,
-                    line=dict(width=2),
-                    marker=dict(size=4)
-                ))
-            
-            fig.update_layout(
-                title="Position Changes Throughout the Race",
-                xaxis_title="Lap Number",
-                yaxis_title="Position",
-                yaxis=dict(autorange='reversed'),  # Lower position number at top
-                height=500
-            )
-            
-            return fig
-            
-        except Exception as e:
-            st.error(f"Error creating position chart: {e}")
-            return None
-    
-    def get_session_statistics(self, session):
-        """Get basic session statistics"""
-        stats = {}
-        
-        try:
-            # Basic info
-            stats['total_laps'] = len(session.laps)
-            stats['total_drivers'] = len(session.laps['Driver'].unique())
-            
-            # Session info
-            session_info = session.session_info
-            stats['session_type'] = session_info.get('Type', 'Unknown')
-            stats['track_name'] = session_info.get('Location', 'Unknown')
-            
-            # Fastest lap
-            fastest_lap = session.laps.pick_fastest()
-            stats['fastest_lap_time'] = str(fastest_lap['LapTime'])
-            stats['fastest_lap_driver'] = fastest_lap['Driver']
-            
-            # Average lap time
-            valid_laps = session.laps[session.laps['LapTime'].notna()]
-            if not valid_laps.empty:
-                avg_seconds = valid_laps['LapTime'].dt.total_seconds().mean()
-                stats['average_lap_time'] = f"{avg_seconds:.3f}s"
-            else:
-                stats['average_lap_time'] = "N/A"
-            
-            # Session date info
-            if hasattr(session, 'date') and session.date:
-                stats['session_date'] = session.date.strftime("%Y-%m-%d")
-            
-            return stats
-            
-        except Exception as e:
-            st.error(f"Error calculating statistics: {e}")
-            return {}
-
-def main():
+def setup_page():
+    """Configure Streamlit page settings"""
     st.set_page_config(
         page_title="F1 Analytics Dashboard", 
         page_icon="🏎️",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+
+def render_header():
+    """Render page header"""
     st.title("🏎️ Formula 1 Analytics Dashboard")
-    st.markdown("*Real-time F1 data analysis and visualization*")
+    st.markdown("*Advanced F1 telemetry and race analysis*")
     st.markdown("---")
-    
-    # Initialize dashboard
-    dashboard = F1Dashboard()
-    
-    # Sidebar for configuration
+
+def render_sidebar():
+    """Render sidebar with session selection"""
     st.sidebar.header("⚙️ Session Selection")
     
-    # Year selection - Updated to include 2025
-    current_year = 2025
+    # Year selection
     year = st.sidebar.selectbox(
         "Season", 
-        range(2023, current_year + 1), 
-        index=2,  # Default to 2025 (current season)
-        help="Select F1 season year"
+        [2025, 2024, 2023], 
+        help="Select F1 season"
     )
     
     # Load events
-    with st.spinner("Loading F1 schedule..."):
-        events = dashboard.get_available_events(year)
+    with st.spinner("Loading schedule..."):
+        events = get_schedule(year)
     
-    if events:
-        # Show current season info
-        if year == 2025:
-            st.sidebar.success("🏁 Current 2025 Season!")
-        
-        event = st.sidebar.selectbox("Race Event", events)
-        session_type = st.sidebar.selectbox(
-            "Session", 
-            ["FP1", "FP2", "FP3", "Q", "R"],
-            help="FP=Free Practice, Q=Qualifying, R=Race"
-        )
-        
-        # Load session data button
-        if st.sidebar.button("🔄 Load Session Data", type="primary"):
-            with st.spinner(f"Loading {event} {session_type} data..."):
-                session = dashboard.load_session_data(year, event, session_type)
-                if session:
-                    st.session_state.session = session
-                    st.session_state.event_info = f"{event} {session_type} ({year})"
-                    st.session_state.year = year
-                    st.sidebar.success(f"✅ Data loaded successfully!")
-                    if year == 2025:
-                        st.sidebar.info("📊 Live 2025 season data!")
-                else:
-                    st.sidebar.error("❌ Failed to load session data")
-    else:
-        if year == 2025:
-            st.sidebar.warning("⚠️ 2025 season data may be limited for future races")
-        else:
-            st.sidebar.error("❌ No events found for selected year")
+    if not events:
+        st.error("Failed to load schedule")
+        return None, None, None, None
     
-    # Display current session info
+    # Show season info
+    if year == 2025:
+        st.sidebar.success("🏆 Current 2025 Season!")
+    
+    event = st.sidebar.selectbox("Race Event", events)
+    session_type = st.sidebar.selectbox(
+        "Session", 
+        ["R", "Q", "FP3", "FP2", "FP1"],
+        help="R=Race, Q=Qualifying, FP=Free Practice"
+    )
+    
+    # Load session data
+    if st.sidebar.button("🔄 Load Session Data", type="primary"):
+        with st.spinner("Loading session data..."):
+            session = load_session(year, event, session_type)
+            if session:
+                st.session_state.session = session
+                st.session_state.event_info = f"{event} {session_type} ({year})"
+                st.session_state.year = year
+                st.sidebar.success("✅ Data loaded!")
+                if year == 2025:
+                    st.sidebar.info("📊 Live 2025 data!")
+            else:
+                st.sidebar.error("❌ Failed to load data")
+    
+    # Show current session info
     if 'session' in st.session_state:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Current Session")
         st.sidebar.info(f"📊 {st.session_state.event_info}")
-        
-        # Show season info
-        current_year = st.session_state.get('year', 2024)
-        if current_year == 2025:
-            st.sidebar.markdown("🏆 **2025 Season** - Latest data available!")
-        elif current_year == 2024:
-            st.sidebar.markdown("🏁 **2024 Season** - Complete season data")
-        else:
-            st.sidebar.markdown(f"📚 **{current_year} Season** - Historical data")
     
-    # Main dashboard content
-    if 'session' in st.session_state:
-        session = st.session_state.session
-        
-        # Get session statistics
-        stats = dashboard.get_session_statistics(session)
-        
-        # Session overview metrics
-        if stats:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Laps", stats.get('total_laps', 0))
-            with col2:
-                st.metric("Drivers", stats.get('total_drivers', 0))
-            with col3:
-                st.metric("Fastest Lap", stats.get('fastest_lap_time', 'N/A'))
-            with col4:
-                st.metric("Fastest Driver", stats.get('fastest_lap_driver', 'N/A'))
-            
-            # Additional info for current session
-            if stats.get('track_name') and stats.get('session_date'):
-                st.markdown(f"**📍 Track:** {stats.get('track_name')} | **📅 Date:** {stats.get('session_date')}")
-            
-            # Show if this is current season data
-            current_year = st.session_state.get('year', 2024)
-            if current_year == 2025:
-                st.success("🏆 You're viewing current 2025 season data!")
-            elif current_year == 2024:
-                st.info("🏁 Complete 2024 season data")
-            else:
-                st.info(f"📚 Historical {current_year} season data")
-        
-        st.markdown("---")
-        
-        # Create tabs for different analyses
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📊 Lap Analysis", 
-            "⏱️ Sector Times", 
-            "📈 Telemetry", 
-            "🏁 Positions",
-            "📋 Data Table"
-        ])
-        
-        with tab1:
-            st.header("Lap Time Analysis")
-            
-            # Driver selection for lap analysis
-            all_drivers = session.laps['Driver'].unique().tolist()
-            selected_drivers = st.multiselect(
-                "Select drivers to display (max 10 for performance)", 
-                all_drivers, 
-                default=all_drivers[:5] if len(all_drivers) >= 5 else all_drivers,
-                max_selections=10
-            )
-            
-            if selected_drivers:
-                fig = dashboard.create_lap_time_chart(session, selected_drivers)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Lap time statistics
-                st.subheader("Lap Time Statistics")
-                lap_stats = []
-                for driver in selected_drivers:
-                    driver_laps = session.laps[session.laps['Driver'] == driver]
-                    valid_laps = driver_laps[driver_laps['LapTime'].notna()]
-                    
-                    if not valid_laps.empty:
-                        lap_times = valid_laps['LapTime'].dt.total_seconds()
-                        lap_stats.append({
-                            'Driver': driver,
-                            'Best Lap': f"{lap_times.min():.3f}s",
-                            'Average Lap': f"{lap_times.mean():.3f}s",
-                            'Worst Lap': f"{lap_times.max():.3f}s",
-                            'Total Laps': len(valid_laps),
-                            'Std Dev': f"{lap_times.std():.3f}s"
-                        })
-                
-                if lap_stats:
-                    df_stats = pd.DataFrame(lap_stats)
-                    st.dataframe(df_stats, use_container_width=True)
-            else:
-                st.warning("Please select at least one driver to display lap times.")
-        
-        with tab2:
-            st.header("Sector Time Analysis")
-            
-            result = dashboard.create_sector_analysis(session)
-            if result:
-                fig, df = result
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Show data table
-                st.subheader("Sector Times Table")
-                st.dataframe(df.round(3), use_container_width=True)
-                
-                # Sector analysis insights
-                st.subheader("Sector Analysis")
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    fastest_s1 = df.loc[df['Sector1'].idxmin()]
-                    st.metric("Fastest Sector 1", fastest_s1['Driver'], f"{fastest_s1['Sector1']:.3f}s")
-                
-                with col2:
-                    fastest_s2 = df.loc[df['Sector2'].idxmin()]
-                    st.metric("Fastest Sector 2", fastest_s2['Driver'], f"{fastest_s2['Sector2']:.3f}s")
-                
-                with col3:
-                    fastest_s3 = df.loc[df['Sector3'].idxmin()]
-                    st.metric("Fastest Sector 3", fastest_s3['Driver'], f"{fastest_s3['Sector3']:.3f}s")
-            else:
-                st.warning("No complete sector time data available for this session.")
-        
-        with tab3:
-            st.header("Telemetry Comparison")
-            
-            available_drivers = session.laps['Driver'].unique().tolist()
-            
-            if len(available_drivers) >= 2:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    driver1 = st.selectbox("Driver 1", available_drivers, key="driver1")
-                with col2:
-                    driver2 = st.selectbox("Driver 2", available_drivers, key="driver2", index=1)
-                
-                if driver1 != driver2:
-                    fig = dashboard.create_telemetry_chart(session, driver1, driver2)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Telemetry insights
-                        try:
-                            lap1 = session.laps.pick_driver(driver1).pick_fastest()
-                            lap2 = session.laps.pick_driver(driver2).pick_fastest()
-                            
-                            tel1 = lap1.get_telemetry()
-                            tel2 = lap2.get_telemetry()
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric(f"{driver1} Max Speed", f"{tel1['Speed'].max():.1f} km/h")
-                                st.metric(f"{driver1} Avg Speed", f"{tel1['Speed'].mean():.1f} km/h")
-                            
-                            with col2:
-                                st.metric(f"{driver2} Max Speed", f"{tel2['Speed'].max():.1f} km/h")
-                                st.metric(f"{driver2} Avg Speed", f"{tel2['Speed'].mean():.1f} km/h")
-                        except:
-                            pass
-                    else:
-                        st.warning("Telemetry data not available for the selected drivers.")
-                else:
-                    st.warning("Please select two different drivers for comparison.")
-            else:
-                st.warning("At least 2 drivers are needed for telemetry comparison.")
-        
-        with tab4:
-            st.header("Position Changes")
-            
-            if session.session_info['Type'] == 'R':  # Race session
-                fig = dashboard.create_position_chart(session)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Starting grid vs finishing positions
-                    try:
-                        start_positions = session.laps[session.laps['LapNumber'] == 1][['Driver', 'Position']].dropna()
-                        final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
-                        
-                        if not start_positions.empty and not final_positions.empty:
-                            position_changes = []
-                            for _, row in start_positions.iterrows():
-                                driver = row['Driver']
-                                start_pos = row['Position']
-                                if driver in final_positions.index:
-                                    final_pos = final_positions[driver]
-                                    change = start_pos - final_pos  # Positive = gained positions
-                                    position_changes.append({
-                                        'Driver': driver,
-                                        'Start Position': int(start_pos),
-                                        'Final Position': int(final_pos),
-                                        'Positions Gained': int(change)
-                                    })
-                            
-                            if position_changes:
-                                df_changes = pd.DataFrame(position_changes)
-                                df_changes = df_changes.sort_values('Positions Gained', ascending=False)
-                                
-                                st.subheader("Position Changes Summary")
-                                st.dataframe(df_changes, use_container_width=True)
-                    except:
-                        pass
-                else:
-                    st.warning("Position data not available for this session.")
-            else:
-                st.info("Position tracking is only available for race sessions.")
-        
-        with tab5:
-            st.header("Session Data")
-            
-            # Raw lap data
-            st.subheader("Lap Data")
-            lap_data = session.laps[['Driver', 'LapNumber', 'LapTime', 'Sector1Time', 'Sector2Time', 'Sector3Time', 'SpeedI1', 'SpeedI2', 'SpeedFL', 'SpeedST']].copy()
-            
-            # Convert timedelta columns to string for display
-            time_columns = ['LapTime', 'Sector1Time', 'Sector2Time', 'Sector3Time']
-            for col in time_columns:
-                if col in lap_data.columns:
-                    lap_data[col] = lap_data[col].astype(str)
-            
-            st.dataframe(lap_data, use_container_width=True)
-            
-            # Download data as CSV
-            csv = lap_data.to_csv(index=False)
-            st.download_button(
-                label="📥 Download lap data as CSV",
-                data=csv,
-                file_name=f"{st.session_state.event_info.replace(' ', '_')}_lap_data.csv",
-                mime='text/csv',
-            )
+    return year, event, session_type, events
+
+def render_welcome_screen():
+    """Render welcome screen when no session is loaded"""
+    st.markdown("## Welcome to Advanced F1 Analytics! 🏎️")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("### 🚀 Advanced Features:")
+        st.markdown("- **📊 Lap Analysis** - Detailed lap time comparisons")
+        st.markdown("- **⏱️ Sector Analysis** - Sector-by-sector performance")
+        st.markdown("- **📈 Telemetry** - Speed, throttle, brake, gear analysis")
+        st.markdown("- **🏁 Position Tracking** - Race position changes")
+        st.markdown("- **🎯 Speed Traces** - Track-based speed analysis")
+    
+    with col2:
+        st.markdown("### 📋 Getting Started:")
+        st.markdown("1. Select a season (2025 for current)")
+        st.markdown("2. Choose race event")
+        st.markdown("3. Pick session type")
+        st.markdown("4. Click 'Load Session Data'")
+        st.markdown("5. Explore all analysis tabs")
+    
+    st.info("💡 **Pro Tip**: Start with Race or Qualifying sessions for the most complete data!")
+
+def render_session_overview(session, stats):
+    """Render session overview with key metrics"""
+    # Display key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Laps", stats.get('total_laps', 0))
+    with col2:
+        st.metric("Drivers", stats.get('total_drivers', 0))
+    with col3:
+        st.metric("Fastest Lap", stats.get('fastest_lap_time', 'N/A'))
+    with col4:
+        st.metric("Fastest Driver", stats.get('fastest_lap_driver', 'N/A'))
+    
+    # Additional session info
+    info_text = format_session_info(stats)
+    if info_text:
+        st.markdown(info_text)
+    
+    # Show current season indicator
+    current_year = st.session_state.get('year', 2024)
+    indicator_text, indicator_type = get_season_indicator(current_year)
+    
+    if indicator_type == "success":
+        st.success(indicator_text)
     else:
-        # Welcome screen
-        st.markdown("## Welcome to F1 Analytics Dashboard! 🏎️")
+        st.info(indicator_text)
+
+def render_lap_analysis_tab(session):
+    """Render lap analysis tab"""
+    st.header("Lap Time Analysis")
+    
+    all_drivers = session.laps['Driver'].unique().tolist()
+    selected_drivers = st.multiselect(
+        "Select drivers (max 10):", 
+        all_drivers, 
+        default=all_drivers[:5] if len(all_drivers) >= 5 else all_drivers,
+        max_selections=10
+    )
+    
+    if selected_drivers:
+        fig = create_lap_times_chart(session, selected_drivers)
+        st.plotly_chart(fig, use_container_width=True)
         
-        col1, col2 = st.columns([2, 1])
+        # Lap statistics table
+        st.subheader("Lap Time Statistics")
+        lap_stats_df = calculate_lap_statistics(session, selected_drivers)
         
+        if lap_stats_df is not None:
+            st.dataframe(lap_stats_df, use_container_width=True)
+    else:
+        st.warning("Please select at least one driver to analyze")
+
+def render_sector_analysis_tab(session):
+    """Render sector analysis tab"""
+    st.header("Sector Time Analysis")
+    
+    result = create_sector_analysis_chart(session)
+    if result[0]:
+        fig, df = result
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Sector analysis insights
+        fastest_s1, fastest_s2, fastest_s3 = get_fastest_sector_times(df)
+        
+        if fastest_s1 is not None:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Fastest Sector 1", fastest_s1['Driver'], f"{fastest_s1['Sector1']:.3f}s")
+            with col2:
+                st.metric("Fastest Sector 2", fastest_s2['Driver'], f"{fastest_s2['Sector2']:.3f}s")
+            with col3:
+                st.metric("Fastest Sector 3", fastest_s3['Driver'], f"{fastest_s3['Sector3']:.3f}s")
+        
+        st.subheader("Detailed Sector Times")
+        st.dataframe(df.round(3), use_container_width=True)
+    else:
+        st.warning("No sector time data available for this session")
+
+def render_telemetry_tab(session):
+    """Render telemetry analysis tab"""
+    st.header("Advanced Telemetry Analysis")
+    
+    available_drivers = session.laps['Driver'].unique().tolist()
+    
+    if len(available_drivers) >= 2:
+        col1, col2 = st.columns(2)
         with col1:
-            st.markdown("### Getting Started:")
-            st.markdown("1. **Select a season** from the sidebar (2023-2025)")
-            st.markdown("   - 🏆 **2025**: Current season with latest data")
-            st.markdown("   - 🏁 **2024**: Complete season data")
-            st.markdown("   - 📚 **2023**: Historical data")
-            st.markdown("2. **Choose a race event** from the dropdown")
-            st.markdown("3. **Pick a session type:**")
-            st.markdown("   - **FP1, FP2, FP3**: Free Practice sessions")
-            st.markdown("   - **Q**: Qualifying session")
-            st.markdown("   - **R**: Race session")
-            st.markdown("4. **Click 'Load Session Data'** to start analyzing")
-            
-            st.markdown("### Dashboard Features:")
-            st.markdown("- 📊 **Lap Analysis**: Compare lap times and performance")
-            st.markdown("- ⏱️ **Sector Times**: Detailed sector-by-sector analysis")
-            st.markdown("- 📈 **Telemetry**: Speed profiles and technical data")
-            st.markdown("- 🏁 **Positions**: Race position changes (race sessions only)")
-            st.markdown("- 📋 **Data Export**: Download data as CSV files")
-        
+            driver1 = st.selectbox("Driver 1", available_drivers, key="tel_driver1")
         with col2:
-            st.markdown("### Available Seasons")
-            st.markdown("**🏆 2025 Season (Current)**")
-            st.markdown("- Live race data as it happens")
-            st.markdown("- Most recent sessions available")
-            st.markdown("- Championship standings in real-time")
-            
-            st.markdown("**🏁 2024 Season (Complete)**") 
-            st.markdown("- Full season data")
-            st.markdown("- All races and sessions")
-            st.markdown("- Championship results")
-            
-            st.markdown("**📚 2023 Season (Historical)**")
-            st.markdown("- Historical reference data")
-            st.markdown("- Compare with current season")
-            
-            st.info("💡 **Pro Tip**: Start with the current 2025 season for the latest F1 action and most recent race data!")
+            driver2 = st.selectbox("Driver 2", available_drivers, key="tel_driver2", index=1)
         
-        st.markdown("---")
-        st.markdown("*Powered by FastF1 and Streamlit*")
+        if driver1 != driver2:
+            fig = create_telemetry_chart(session, driver1, driver2)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Telemetry insights
+                insights = get_telemetry_insights(session, driver1, driver2)
+                if insights:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.subheader(f"{driver1} Telemetry")
+                        st.metric("Max Speed", f"{insights[driver1]['max_speed']:.1f} km/h")
+                        st.metric("Avg Speed", f"{insights[driver1]['avg_speed']:.1f} km/h")
+                        if insights[driver1]['avg_throttle']:
+                            st.metric("Avg Throttle", f"{insights[driver1]['avg_throttle']:.1f}%")
+                    
+                    with col2:
+                        st.subheader(f"{driver2} Telemetry")
+                        st.metric("Max Speed", f"{insights[driver2]['max_speed']:.1f} km/h")
+                        st.metric("Avg Speed", f"{insights[driver2]['avg_speed']:.1f} km/h")
+                        if insights[driver2]['avg_throttle']:
+                            st.metric("Avg Throttle", f"{insights[driver2]['avg_throttle']:.1f}%")
+            else:
+                st.warning("Telemetry data not available for selected drivers")
+        else:
+            st.warning("Please select two different drivers")
+    else:
+        st.warning("Need at least 2 drivers for telemetry comparison")
+
+def render_position_tracking_tab(session):
+    """Render position tracking tab"""
+    st.header("Race Position Tracking")
+    
+    if session.session_info['Type'] == 'R':
+        result = create_position_tracking_chart(session)
+        if result[0]:
+            fig, changes_df = result
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.subheader("Position Changes Summary")
+            st.dataframe(changes_df, use_container_width=True)
+        else:
+            st.warning("Position data not available")
+    else:
+        st.info("Position tracking is only available for race sessions")
+
+def render_speed_traces_tab(session):
+    """Render speed traces tab"""
+    st.header("Speed Trace Analysis")
+    
+    trace_drivers = st.multiselect(
+        "Select drivers for speed trace (max 5):",
+        session.laps['Driver'].unique().tolist(),
+        default=session.laps['Driver'].unique().tolist()[:3],
+        max_selections=5
+    )
+    
+    if trace_drivers:
+        fig = create_speed_trace_chart(session, trace_drivers)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+            st.info("💡 This shows speed variations around the track for fastest laps")
+        else:
+            st.warning("Speed trace data not available")
+
+def render_data_export_tab(session):
+    """Render data export tab"""
+    st.header("Data Export")
+    
+    # Raw lap data
+    st.subheader("Session Data")
+    
+    lap_data = prepare_export_data(session)
+    st.dataframe(lap_data, use_container_width=True)
+    
+    # Download button
+    csv = lap_data.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Complete Session Data",
+        data=csv,
+        file_name=f"{st.session_state.event_info.replace(' ', '_')}_complete_data.csv",
+        mime='text/csv',
+    )
+
+def main():
+    """Main application function"""
+    # Setup page configuration
+    setup_page()
+    
+    # Render header
+    render_header()
+    
+    # Render sidebar and get selections
+    year, event, session_type, events = render_sidebar()
+    
+    # Check if session is loaded
+    if 'session' not in st.session_state:
+        render_welcome_screen()
+        return
+    
+    # Get session and stats
+    session = st.session_state.session
+    stats = get_session_stats(session)
+    
+    # Render session overview
+    render_session_overview(session, stats)
+    st.markdown("---")
+    
+    # Create and render tabs
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Lap Analysis", 
+        "⏱️ Sector Times", 
+        "📈 Telemetry", 
+        "🏁 Position Tracking",
+        "🎯 Speed Traces",
+        "📋 Data Export"
+    ])
+    
+    with tab1:
+        render_lap_analysis_tab(session)
+    
+    with tab2:
+        render_sector_analysis_tab(session)
+    
+    with tab3:
+        render_telemetry_tab(session)
+    
+    with tab4:
+        render_position_tracking_tab(session)
+    
+    with tab5:
+        render_speed_traces_tab(session)
+    
+    with tab6:
+        render_data_export_tab(session)
 
 if __name__ == "__main__":
     main()
