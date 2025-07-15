@@ -3,6 +3,8 @@ Data loading and caching functions for F1 Analytics Dashboard
 """
 import streamlit as st
 import fastf1
+import fastf1
+fastf1.ergast.interface.BASE_URL = "https://api.jolpi.ca/ergast/f1"
 import pandas as pd
 import tempfile
 import warnings
