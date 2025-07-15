@@ -92,13 +92,13 @@ def format_session_info(stats):
 
 def get_season_indicator(year):
     """Get season indicator text and style"""
-    current_year = datetime.now().year
+    current_year = 2025
     
     if year == current_year:
         return f"🏁 {year} season - Live ongoing season!", "success"
-    elif year == current_year - 1:
-        return f"🏆 Complete {year} season data", "success"
-    elif year == current_year - 2:
-        return f"📚 {year} historical data", "info"
+    elif year == 2024:
+        return "🏆 Complete 2024 season data", "success"
+    elif year == 2023:
+        return "📚 2023 historical data", "info"
     else:
         return f"📚 {year} historical data", "info"

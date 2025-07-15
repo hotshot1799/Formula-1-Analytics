@@ -8,7 +8,7 @@ import pandas as pd
 # Import custom modules
 from data_loader import (
     get_schedule, load_session, get_session_stats, get_available_years, 
-    check_session_availability, get_race_weekend_summary
+    check_session_availability, get_race_weekend_summary, get_latest_race_data, get_recent_race_highlights
 )
 from chart_creators import (
     create_lap_times_chart, 
@@ -156,80 +156,165 @@ def render_sidebar():
     return year, event, session_type, events
 
 def render_welcome_screen():
-    """Render welcome screen when no session is loaded"""
-    st.markdown("## Welcome to Advanced F1 Analytics! 🏎️")
+    """Render welcome screen with latest race analysis"""
+    st.markdown("## 🏎️ Latest F1 Race Analysis")
+    
+    # Get latest race data
+    latest_race = get_latest_race_data()
+    
+    if latest_race:
+        session = latest_race['session']
+        stats = get_session_stats(session)
+        
+        # Latest race header
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.markdown(f"### 🏁 **{latest_race['event']} {latest_race['year']}**")
+            if latest_race['status'] == 'race_complete':
+                st.success("✅ Race Complete")
+            else:
+                st.info("🏁 Latest Qualifying")
+        
+        with col2:
+            st.metric("📅 Date", stats.get('session_date', 'Unknown'))
+        
+        with col3:
+            st.metric("🏎️ Session", latest_race['session_type'])
+        
+        # Quick stats
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("🏆 Fastest Driver", stats.get('fastest_lap_driver', 'N/A'))
+        with col2:
+            st.metric("⚡ Fastest Lap", stats.get('fastest_lap_time', 'N/A'))
+        with col3:
+            st.metric("👥 Drivers", stats.get('total_drivers', 0))
+        with col4:
+            st.metric("🔄 Total Laps", stats.get('total_laps', 0))
+        
+        # Auto-load this session
+        if st.button("🔄 Analyze This Race", type="primary", use_container_width=True):
+            st.session_state.session = session
+            st.session_state.event_info = f"{latest_race['event']} {latest_race['session_type']} ({latest_race['year']})"
+            st.session_state.year = latest_race['year']
+            st.rerun()
+        
+        # Show mini lap time chart
+        if latest_race['session_type'] == 'R':
+            st.markdown("### 📊 Quick Race Analysis")
+            
+            # Get top 5 drivers by final position
+            try:
+                final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
+                top_drivers = final_positions.sort_values().head(5).index.tolist()
+                
+                fig = create_lap_times_chart(session, top_drivers)
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show podium
+                podium = final_positions.sort_values().head(3)
+                st.markdown("### 🏆 Podium")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(f"**🥇 1st:** {podium.index[0]}")
+                with col2:
+                    st.markdown(f"**🥈 2nd:** {podium.index[1] if len(podium) > 1 else 'N/A'}")
+                with col3:
+                    st.markdown(f"**🥉 3rd:** {podium.index[2] if len(podium) > 2 else 'N/A'}")
+                
+            except Exception as e:
+                st.info("Race analysis loading...")
+        
+        elif latest_race['session_type'] == 'Q':
+            st.markdown("### 🏁 Qualifying Results")
+            
+            # Get qualifying results
+            try:
+                # Get fastest lap for each driver
+                fastest_laps = []
+                for driver in session.laps['Driver'].unique():
+                    try:
+                        fastest_lap = session.laps.pick_driver(driver).pick_fastest()
+                        fastest_laps.append({
+                            'Driver': driver,
+                            'Fastest Lap': fastest_lap['LapTime'].total_seconds(),
+                            'Lap Time': str(fastest_lap['LapTime'])
+                        })
+                    except:
+                        continue
+                
+                if fastest_laps:
+                    df = pd.DataFrame(fastest_laps)
+                    df = df.sort_values('Fastest Lap').head(10)
+                    df['Position'] = range(1, len(df) + 1)
+                    
+                    # Show top 3
+                    st.markdown("### 🏆 Top 3 Qualifiers")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"**🥇 Pole:** {df.iloc[0]['Driver']}")
+                        st.markdown(f"*{df.iloc[0]['Lap Time']}*")
+                    with col2:
+                        st.markdown(f"**🥈 2nd:** {df.iloc[1]['Driver'] if len(df) > 1 else 'N/A'}")
+                        st.markdown(f"*{df.iloc[1]['Lap Time'] if len(df) > 1 else 'N/A'}*")
+                    with col3:
+                        st.markdown(f"**🥉 3rd:** {df.iloc[2]['Driver'] if len(df) > 2 else 'N/A'}")
+                        st.markdown(f"*{df.iloc[2]['Lap Time'] if len(df) > 2 else 'N/A'}*")
+                    
+                    # Show full results table
+                    st.markdown("### 📋 Full Qualifying Results")
+                    display_df = df[['Position', 'Driver', 'Lap Time']].reset_index(drop=True)
+                    st.dataframe(display_df, use_container_width=True)
+                
+            except Exception as e:
+                st.info("Qualifying analysis loading...")
+    
+    else:
+        st.info("⏳ Loading latest race data...")
+        
+        # Show manual selection as fallback
+        st.markdown("### 🔧 Manual Selection")
+        st.markdown("Use the sidebar to manually select a race for analysis")
+    
+    # Show recent race highlights
+    st.markdown("---")
+    st.markdown("### 📰 Recent Race Highlights")
+    
+    highlights = get_recent_race_highlights()
+    if highlights:
+        for highlight in highlights:
+            with st.expander(f"🏁 {highlight['event']} {highlight['year']} - {highlight['session_date']}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**🏆 Winner:** {highlight['winner']}")
+                    st.markdown(f"**⚡ Fastest Lap:** {highlight['fastest_lap_driver']} ({highlight['fastest_lap_time']})")
+                with col2:
+                    st.markdown("**🏆 Podium:**")
+                    for i, driver in enumerate(highlight['podium'][:3]):
+                        medals = ['🥇', '🥈', '🥉']
+                        st.markdown(f"{medals[i]} {driver}")
+    
+    # Getting started section
+    st.markdown("---")
+    st.markdown("### 🚀 Advanced Analytics Available")
     
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("### 🚀 Advanced Features:")
-        st.markdown("- **📊 Lap Analysis** - Detailed lap time comparisons")
-        st.markdown("- **⏱️ Sector Analysis** - Sector-by-sector performance")
-        st.markdown("- **📈 Telemetry** - Speed, throttle, brake, gear analysis")
-        st.markdown("- **🏁 Position Tracking** - Race position changes")
-        st.markdown("- **🎯 Speed Traces** - Track-based speed analysis")
+        st.markdown("**📊 Race Analysis:**")
+        st.markdown("- Lap-by-lap performance")
+        st.markdown("- Position changes tracking")
+        st.markdown("- Tire strategy analysis")
+        st.markdown("- Pit stop impact")
     
     with col2:
-        st.markdown("### 📋 Getting Started:")
-        st.markdown("1. Select **2025** for current season")
-        st.markdown("2. Choose completed race event")
-        st.markdown("3. Pick session type")
-        st.markdown("4. Click 'Load Session Data'")
-        st.markdown("5. Explore all analysis tabs")
+        st.markdown("**🔧 Technical Analysis:**")
+        st.markdown("- Sector time comparisons")
+        st.markdown("- Speed traces by track distance")
+        st.markdown("- Telemetry (throttle, brake, gear)")
+        st.markdown("- Driver performance metrics")
     
-    # Show current season info
-    st.markdown("---")
-    st.markdown("### 🏁 2025 Season Status")
-    
-    current_year = 2025
-    available_years = get_available_years()
-    
-    if current_year in available_years:
-        # Get 2025 events
-        events_2025 = get_schedule(current_year)
-        if events_2025:
-            st.success(f"✅ **2025 Season Active** - {len(events_2025)} race weekends with data available!")
-            
-            # Show race weekend statuses
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**🏁 Available Race Weekends:**")
-                for event in events_2025[:5]:  # Show first 5
-                    summary = get_race_weekend_summary(current_year, event)
-                    if summary['status'] == 'completed':
-                        st.markdown(f"- ✅ **{event}** (Complete)")
-                    elif summary['status'] == 'qualifying_done':
-                        st.markdown(f"- 🏁 **{event}** (Qualifying Done)")
-                    elif summary['status'] == 'practice_only':
-                        st.markdown(f"- ⚠️ **{event}** (Practice Only)")
-                
-                if len(events_2025) > 5:
-                    st.markdown(f"... and {len(events_2025) - 5} more weekends")
-            
-            with col2:
-                st.markdown("**💡 Best Sessions to Analyze:**")
-                st.markdown("- **Race (R)**: Complete race analysis")
-                st.markdown("- **Qualifying (Q)**: Pole position battles")
-                st.markdown("- **FP3**: Representative practice pace")
-                st.markdown("- **Sprint (S)**: If available")
-                
-                st.info("🔄 **Live Season**: Data updates after each session!")
-        else:
-            st.warning("⚠️ 2025 season detected but no race data available yet")
-    else:
-        st.info("📅 2025 season data will appear when races begin")
-    
-    # Show other seasons
-    if len(available_years) > 1:
-        st.markdown("### 📚 Other Available Seasons:")
-        for year in available_years:
-            if year != current_year:
-                events_count = len(get_schedule(year))
-                if year == 2024:
-                    st.markdown(f"- **{year}**: Complete season ({events_count} races) 🏆")
-                else:
-                    st.markdown(f"- **{year}**: Historical data ({events_count} races)")
-    
-    st.info("💡 **Pro Tip**: Start with completed race weekends for the most detailed analysis. Check the sidebar for race weekend status!")
+    st.info("💡 **Quick Start**: Click 'Analyze This Race' above for instant analysis, or use the sidebar to explore different sessions!")
 
 def render_session_overview(session, stats):
     """Render session overview with key metrics"""

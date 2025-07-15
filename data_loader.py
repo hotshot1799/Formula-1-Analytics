@@ -18,8 +18,10 @@ def get_available_years():
     current_year = datetime.now().year
     available_years = []
     
-    # Check from current year back to 2018 (fastf1 supports from 2018)
-    for year in range(current_year, 2017, -1):
+    # Always include current year and recent years
+    years_to_check = [current_year, current_year-1, current_year-2]
+    
+    for year in years_to_check:
         try:
             schedule = fastf1.get_event_schedule(year)
             if not schedule.empty:
@@ -174,7 +176,107 @@ def check_session_availability(year, event):
     
     return available_sessions
 
-def get_race_weekend_summary(year, event):
+def get_latest_race_data():
+    """Get the most recent race data available"""
+    try:
+        current_year = datetime.now().year
+        
+        # Get available years
+        available_years = []
+        for year in range(current_year, 2017, -1):
+            try:
+                schedule = fastf1.get_event_schedule(year)
+                if not schedule.empty:
+                    available_years.append(year)
+            except:
+                continue
+        
+        # Find the most recent race
+        for year in available_years:
+            events = get_schedule(year)
+            if not events:
+                continue
+                
+            # Check events in reverse order (most recent first)
+            for event in reversed(events):
+                # Try to load race session first
+                try:
+                    session = fastf1.get_session(year, event, 'R')
+                    session.load()
+                    if hasattr(session, 'laps') and not session.laps.empty:
+                        return {
+                            'year': year,
+                            'event': event,
+                            'session_type': 'R',
+                            'session': session,
+                            'status': 'race_complete'
+                        }
+                except:
+                    pass
+                
+                # If no race, try qualifying
+                try:
+                    session = fastf1.get_session(year, event, 'Q')
+                    session.load()
+                    if hasattr(session, 'laps') and not session.laps.empty:
+                        return {
+                            'year': year,
+                            'event': event,
+                            'session_type': 'Q',
+                            'session': session,
+                            'status': 'qualifying_complete'
+                        }
+                except:
+                    pass
+        
+        return None
+        
+    except Exception as e:
+        return None
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_recent_race_highlights():
+    """Get highlights from recent races"""
+    try:
+        current_year = datetime.now().year
+        highlights = []
+        
+        # Get last 3 completed races
+        for year in [current_year, current_year-1]:
+            events = get_schedule(year)
+            if not events:
+                continue
+                
+            for event in reversed(events):
+                if len(highlights) >= 3:
+                    break
+                    
+                try:
+                    session = fastf1.get_session(year, event, 'R')
+                    session.load()
+                    if hasattr(session, 'laps') and not session.laps.empty:
+                        fastest_lap = session.laps.pick_fastest()
+                        
+                        # Get podium (top 3 finishers)
+                        final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
+                        podium = final_positions.sort_values().head(3)
+                        
+                        highlights.append({
+                            'year': year,
+                            'event': event,
+                            'winner': podium.index[0] if len(podium) > 0 else "Unknown",
+                            'fastest_lap_driver': fastest_lap['Driver'],
+                            'fastest_lap_time': str(fastest_lap['LapTime']),
+                            'podium': list(podium.index[:3]),
+                            'session_date': session.date.strftime("%Y-%m-%d") if hasattr(session, 'date') and session.date else "Unknown"
+                        })
+                except:
+                    continue
+        
+        return highlights
+        
+    except Exception as e:
+        return []
     """Get summary of available data for a race weekend"""
     try:
         summary = {
