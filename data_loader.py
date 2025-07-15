@@ -95,11 +95,10 @@ def get_schedule(year):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_session(year, event, session_type):
-    """Load F1 session data"""
+    """Load F1 session data with better error handling"""
     try:
         session = fastf1.get_session(year, event, session_type)
         
-        # Check if session exists
         if session is None:
             return None
             
@@ -112,10 +111,14 @@ def load_session(year, event, session_type):
             return None
             
     except Exception as e:
+        error_msg = str(e).lower()
         # Don't show error for expected failures (future sessions)
-        if "not yet available" in str(e).lower() or "no data" in str(e).lower():
+        if "not yet available" in error_msg or "no data" in error_msg:
             return None
-        st.error(f"Error loading {event} {session_type}: {str(e)[:100]}")
+        elif "connection" in error_msg or "timeout" in error_msg:
+            st.error(f"Network error loading {event} {session_type}. Please try again.")
+        else:
+            st.error(f"Error loading {event} {session_type}: {str(e)[:100]}")
         return None
 
 def get_session_stats(session):
@@ -177,6 +180,31 @@ def check_session_availability(year, event):
             continue
     
     return available_sessions
+
+def get_race_weekend_summary(year, event):
+    """Get summary of available data for a race weekend"""
+    try:
+        summary = {
+            'event': event,
+            'year': year,
+            'available_sessions': check_session_availability(year, event),
+            'status': 'unknown'
+        }
+        
+        # Determine weekend status
+        if 'R' in summary['available_sessions']:
+            summary['status'] = 'completed'
+        elif 'Q' in summary['available_sessions']:
+            summary['status'] = 'qualifying_done'
+        elif any(fp in summary['available_sessions'] for fp in ['FP1', 'FP2', 'FP3']):
+            summary['status'] = 'practice_only'
+        else:
+            summary['status'] = 'no_data'
+        
+        return summary
+        
+    except Exception as e:
+        return {'event': event, 'year': year, 'available_sessions': [], 'status': 'error'}
 
 def get_latest_race_data():
     """Get the most recent race data available"""
@@ -279,26 +307,3 @@ def get_recent_race_highlights():
         
     except Exception as e:
         return []
-    """Get summary of available data for a race weekend"""
-    try:
-        summary = {
-            'event': event,
-            'year': year,
-            'available_sessions': check_session_availability(year, event),
-            'status': 'unknown'
-        }
-        
-        # Determine weekend status
-        if 'R' in summary['available_sessions']:
-            summary['status'] = 'completed'
-        elif 'Q' in summary['available_sessions']:
-            summary['status'] = 'qualifying_done'
-        elif any(fp in summary['available_sessions'] for fp in ['FP1', 'FP2', 'FP3']):
-            summary['status'] = 'practice_only'
-        else:
-            summary['status'] = 'no_data'
-        
-        return summary
-        
-    except Exception as e:
-        return {'event': event, 'year': year, 'available_sessions': [], 'status': 'error'}
