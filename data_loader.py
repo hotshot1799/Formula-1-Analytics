@@ -18,10 +18,8 @@ def get_available_years():
     current_year = datetime.now().year
     available_years = []
     
-    # Always include current year and recent years
-    years_to_check = [current_year, current_year-1, current_year-2]
-    
-    for year in years_to_check:
+    # Check from current year back to 2018 (fastf1 supports from 2018)
+    for year in range(current_year, 2017, -1):
         try:
             schedule = fastf1.get_event_schedule(year)
             if not schedule.empty:
