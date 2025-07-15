@@ -13,17 +13,25 @@ def calculate_lap_statistics(session, selected_drivers):
         valid_laps = driver_laps[driver_laps['LapTime'].notna()]
         
         if not valid_laps.empty:
-            lap_times = valid_laps['LapTime'].dt.total_seconds()
+            lap_times_seconds = valid_laps['LapTime'].dt.total_seconds()
+            
+            # Format times properly
+            def format_lap_time(seconds):
+                minutes = int(seconds // 60)
+                secs = seconds % 60
+                return f"{minutes}:{secs:06.3f}"
+            
             lap_stats.append({
                 'Driver': driver,
-                'Best Lap': f"{lap_times.min():.3f}s",
-                'Average': f"{lap_times.mean():.3f}s",
-                'Worst Lap': f"{lap_times.max():.3f}s",
+                'Best Lap': format_lap_time(lap_times_seconds.min()),
+                'Average': format_lap_time(lap_times_seconds.mean()),
+                'Worst Lap': format_lap_time(lap_times_seconds.max()),
                 'Total Laps': len(valid_laps),
-                'Consistency': f"{lap_times.std():.3f}s"
+                'Consistency': f"{lap_times_seconds.std():.3f}s"
             })
     
     return pd.DataFrame(lap_stats) if lap_stats else None
+    
 
 def get_fastest_sector_times(df):
     """Get fastest times for each sector"""

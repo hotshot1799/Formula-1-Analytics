@@ -230,7 +230,7 @@ def load_2025_session_optimized(event, session_type):
         return None
 
 def get_session_stats(session):
-    """Get detailed session statistics with enhanced 2025 features"""
+    """Get detailed session statistics with proper lap time formatting"""
     try:
         stats = {}
         
@@ -244,10 +244,20 @@ def get_session_stats(session):
         stats['track_name'] = session_info.get('Location', 'Unknown')
         stats['event_name'] = session_info.get('EventName', 'Unknown')
         
-        # Fastest lap details
+        # Fastest lap details - FIXED FORMAT
         try:
             fastest_lap = session.laps.pick_fastest()
-            stats['fastest_lap_time'] = str(fastest_lap['LapTime'])
+            lap_time = fastest_lap['LapTime']
+            
+            # Convert timedelta to proper lap time format (MM:SS.SSS)
+            if pd.notna(lap_time):
+                total_seconds = lap_time.total_seconds()
+                minutes = int(total_seconds // 60)
+                seconds = total_seconds % 60
+                stats['fastest_lap_time'] = f"{minutes}:{seconds:06.3f}"
+            else:
+                stats['fastest_lap_time'] = 'N/A'
+            
             stats['fastest_lap_driver'] = fastest_lap['Driver']
         except:
             stats['fastest_lap_time'] = 'N/A'
@@ -261,12 +271,16 @@ def get_session_stats(session):
             except:
                 stats['max_speed'] = "N/A"
         
-        # Average lap time
+        # Average lap time - FIXED FORMAT
         try:
             valid_laps = session.laps[session.laps['LapTime'].notna()]
             if not valid_laps.empty:
-                avg_seconds = valid_laps['LapTime'].dt.total_seconds().mean()
-                stats['average_lap_time'] = f"{avg_seconds:.3f}s"
+                avg_total_seconds = valid_laps['LapTime'].dt.total_seconds().mean()
+                avg_minutes = int(avg_total_seconds // 60)
+                avg_seconds = avg_total_seconds % 60
+                stats['average_lap_time'] = f"{avg_minutes}:{avg_seconds:06.3f}"
+            else:
+                stats['average_lap_time'] = "N/A"
         except:
             stats['average_lap_time'] = "N/A"
         
