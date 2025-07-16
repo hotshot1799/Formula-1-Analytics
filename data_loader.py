@@ -7,7 +7,7 @@ import fastf1
 import pandas as pd
 import tempfile
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 
 # Suppress warnings and configure cache
 warnings.filterwarnings('ignore')
@@ -222,41 +222,57 @@ def get_latest_race_data():
     try:
         current_year = datetime.now().year
         
-        # Check recent years
-        for year in [current_year, current_year-1]:
-            events = get_schedule(year)
-            if not events:
+        # Check recent years, starting with current
+        for year in [current_year, current_year-1, current_year-2]:
+            schedule = fastf1.get_event_schedule(year)
+            if schedule.empty:
                 continue
+            
+            # Sort by race date descending
+            schedule = schedule.sort_values('Session5DateUtc', ascending=False)
+            
+            now_utc = datetime.now(timezone.utc)
+            
+            for _, row in schedule.iterrows():
+                event_name = row['EventName']
                 
-            # Check events in reverse order (most recent first)
-            for event in reversed(events):
+                # For current year, skip if FP1 hasn't started yet
+                if year == current_year and row['Session1DateUtc'] > now_utc:
+                    continue
+                
                 # Try race session first
-                try:
-                    session = load_session(year, event, 'R')
-                    if session and hasattr(session, 'laps') and not session.laps.empty:
-                        return {
-                            'year': year,
-                            'event': event,
-                            'session_type': 'R',
-                            'session': session,
-                            'status': 'race_complete'
-                        }
-                except:
-                    pass
+                session = load_session(year, event_name, 'R')
+                if session and hasattr(session, 'laps') and not session.laps.empty:
+                    return {
+                        'year': year,
+                        'event': event_name,
+                        'session_type': 'R',
+                        'session': session,
+                        'status': 'race_complete'
+                    }
                 
                 # Try qualifying if no race data
-                try:
-                    session = load_session(year, event, 'Q')
+                session = load_session(year, event_name, 'Q')
+                if session and hasattr(session, 'laps') and not session.laps.empty:
+                    return {
+                        'year': year,
+                        'event': event_name,
+                        'session_type': 'Q',
+                        'session': session,
+                        'status': 'qualifying_complete'
+                    }
+                
+                # Try practice sessions (for ongoing events)
+                for st in ['FP3', 'FP2', 'FP1']:
+                    session = load_session(year, event_name, st)
                     if session and hasattr(session, 'laps') and not session.laps.empty:
                         return {
                             'year': year,
-                            'event': event,
-                            'session_type': 'Q',
+                            'event': event_name,
+                            'session_type': st,
                             'session': session,
-                            'status': 'qualifying_complete'
+                            'status': 'practice_complete'
                         }
-                except:
-                    pass
         
         return None
         
