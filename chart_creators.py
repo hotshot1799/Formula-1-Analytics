@@ -229,7 +229,7 @@ def create_position_tracking_chart(session):
     """Create position tracking chart - now moved to position_tracking.py"""
     # This function is now handled in the position tracking tab
     # Import and use the function from there if needed
-    from ui.tabs.position_tracking import create_position_chart
+    from ui.tab_pages.position_tracking import create_position_chart
     from analysis_utils import get_position_data_safe, calculate_position_changes
     
     try:

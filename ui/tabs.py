@@ -2,12 +2,12 @@
 Analysis tabs component
 """
 import streamlit as st
-from ui.tabs.lap_analysis import render_lap_analysis_tab
-from ui.tabs.sector_analysis import render_sector_analysis_tab
-from ui.tabs.telemetry import render_telemetry_tab
-from ui.tabs.position_tracking import render_position_tracking_tab
-from ui.tabs.speed_traces import render_speed_traces_tab
-from ui.tabs.data_export import render_data_export_tab
+from ui.tab_pages.lap_analysis import render_lap_analysis_tab
+from ui.tab_pages.sector_analysis import render_sector_analysis_tab
+from ui.tab_pages.telemetry import render_telemetry_tab
+from ui.tab_pages.position_tracking import render_position_tracking_tab
+from ui.tab_pages.speed_traces import render_speed_traces_tab
+from ui.tab_pages.data_export import render_data_export_tab
 
 def render_analysis_tabs(session):
     """Render all analysis tabs"""

@@ -8,7 +8,7 @@ from ui.header import render_header
 from ui.sidebar import render_sidebar
 from ui.welcome import render_welcome_screen
 from ui.session_overview import render_session_overview
-from ui.tabs import render_analysis_tabs
+from ui.tab_pages import render_analysis_tabs
 from data_loader import get_session_stats
 
 def main():
