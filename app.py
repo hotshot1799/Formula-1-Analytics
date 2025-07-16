@@ -1,6 +1,6 @@
 """
-F1 Analytics Dashboard - Complete Application
-Works with 2024/2025 data with automatic fallback
+F1 Analytics Dashboard - Complete Application with Lazy Loading
+Works with 2024/2025 data with lazy session availability checking
 """
 import streamlit as st
 import pandas as pd
@@ -8,8 +8,7 @@ import pandas as pd
 # Import custom modules
 from data_loader import (
     get_schedule, load_session, get_session_stats, get_available_years, 
-    check_session_availability, get_race_weekend_summary, get_latest_race_data, 
-    get_recent_race_highlights
+    get_latest_race_data, get_recent_race_highlights
 )
 from chart_creators import (
     create_lap_times_chart, 
@@ -45,21 +44,21 @@ def render_header():
     with col1:
         st.markdown("*Advanced F1 telemetry and race analysis*")
     with col2:
-        current_year = 2025
         available_years = get_available_years()
-        if current_year in available_years:
-            st.success(f"🏁 **{current_year} LIVE SEASON**")
+        latest_year = max(available_years) if available_years else 2024
+        if latest_year >= 2025:
+            st.success(f"🏁 **{latest_year} LIVE SEASON**")
         else:
-            st.info(f"📚 **{max(available_years)} SEASON**")
+            st.info(f"📚 **{latest_year} SEASON**")
     with col3:
-        if st.button("🔄 Refresh Data", help="Refresh data connection"):
+        if st.button("🔄 Refresh Data", help="Clear cache and refresh data"):
             st.cache_data.clear()
             st.rerun()
     
     st.markdown("---")
 
 def render_sidebar():
-    """Render sidebar with session selection"""
+    """Render sidebar with lazy loading session selection"""
     st.sidebar.header("⚙️ Session Selection")
     
     # Get available years
@@ -70,11 +69,10 @@ def render_sidebar():
         return None, None, None, None
     
     # Year selection with smart default
-    default_year = available_years[0]  # Most recent available year
     year = st.sidebar.selectbox(
         "Season", 
         available_years,
-        help=f"Select F1 season (Latest: {default_year})"
+        help=f"Select F1 season (Latest: {max(available_years)})"
     )
     
     # Load events with loading indicator
@@ -88,95 +86,107 @@ def render_sidebar():
     
     # Season status display
     current_year = 2025
-    if year == current_year:
+    if year >= current_year:
         st.sidebar.success(f"🏁 {year} Season - LIVE!")
-        st.sidebar.info(f"📅 {len(events)} race weekends available")
+        st.sidebar.info(f"📅 {len(events)} race weekends")
     elif year == 2024:
         st.sidebar.success("🏆 Complete 2024 Season")
     else:
-        st.sidebar.info(f"📚 {year} Historical Data")
+        st.error("❌ No data available for export")
+        st.info("💡 Try loading a different session or check your data connection")
+
+def main():
+    """Main application function"""
+    # Setup page
+    setup_page()
     
-    # Event selection with enhanced display
+    # Render header
+    render_header()
+    
+    # Render sidebar
+    year, event, session_type, events = render_sidebar()
+    
+    # Main content
+    if 'session' not in st.session_state:
+        render_welcome_screen()
+        return
+    
+    # Session analysis
+    session = st.session_state.session
+    stats = get_session_stats(session)
+    
+    # Session overview
+    render_session_overview(session, stats)
+    st.markdown("---")
+    
+    # Analysis tabs
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Lap Analysis", 
+        "⏱️ Sector Times", 
+        "📈 Telemetry", 
+        "🏁 Position Tracking",
+        "🎯 Speed Traces",
+        "📋 Data Export"
+    ])
+    
+    with tab1:
+        render_lap_analysis_tab(session)
+    
+    with tab2:
+        render_sector_analysis_tab(session)
+    
+    with tab3:
+        render_telemetry_tab(session)
+    
+    with tab4:
+        render_position_tracking_tab(session)
+    
+    with tab5:
+        render_speed_traces_tab(session)
+    
+    with tab6:
+        render_data_export_tab(session)
+
+if __name__ == "__main__":
+    main().sidebar.info(f"📚 {year} Historical Data")
+    
+    # Event selection (no pre-checking availability)
     if len(events) > 10:
         # For seasons with many events, show recent ones first
-        events_display = events[-10:] + events[:-10]  # Recent 10 first
+        events_display = list(reversed(events))  # Most recent first
         event = st.sidebar.selectbox(
             "Race Event", 
             events_display,
-            help="Showing recent events first"
+            help="Showing most recent events first"
         )
     else:
         event = st.sidebar.selectbox("Race Event", events)
     
-    # Check available sessions
-    if event:
-        available_sessions = check_session_availability(year, event)
-        weekend_summary = get_race_weekend_summary(year, event)
-        
-        # Weekend status display
-        status_colors = {
-            'completed': 'success',
-            'qualifying_done': 'info', 
-            'practice_only': 'warning',
-            'upcoming': 'info',
-            'no_data': 'error'
-        }
-        
-        status_messages = {
-            'completed': "✅ Race Weekend Complete",
-            'qualifying_done': "🏁 Qualifying Done",
-            'practice_only': "⚠️ Practice Sessions Only", 
-            'upcoming': "📅 Upcoming Race Weekend",
-            'no_data': "❌ No Data Available"
-        }
-        
-        status = weekend_summary.get('status', 'unknown')
-        if status in status_messages:
-            if status_colors[status] == 'success':
-                st.sidebar.success(status_messages[status])
-            elif status_colors[status] == 'info':
-                st.sidebar.info(status_messages[status])
-            elif status_colors[status] == 'warning':
-                st.sidebar.warning(status_messages[status])
-            else:
-                st.sidebar.error(status_messages[status])
-        
-        # Available sessions display
-        if available_sessions:
-            session_names = {
-                'R': '🏁 Race', 'Q': '🏁 Qualifying', 'S': '🏃 Sprint',
-                'FP1': '🔧 Free Practice 1', 'FP2': '🔧 Free Practice 2', 'FP3': '🔧 Free Practice 3'
-            }
-            session_list = [session_names.get(s, s) for s in available_sessions]
-            st.sidebar.success(f"📊 Available: {', '.join(session_list)}")
-            session_options = available_sessions
-        else:
-            session_options = ["R", "Q", "FP3", "FP2", "FP1", "S"]
-            st.sidebar.info("⏳ Checking session availability...")
-        
-        # Session selection
-        session_descriptions = {
-            'R': 'Race - Main event',
-            'Q': 'Qualifying - Grid positions', 
-            'S': 'Sprint - Short race',
-            'FP3': 'Free Practice 3 - Final practice',
-            'FP2': 'Free Practice 2 - Long runs',
-            'FP1': 'Free Practice 1 - Initial setup'
-        }
-        
-        session_type = st.sidebar.selectbox(
-            "Session",
-            session_options,
-            format_func=lambda x: f"{x} - {session_descriptions.get(x, 'Session')}",
-            help="Select session type for analysis"
-        )
-    else:
-        session_type = "R"
+    # Session selection without availability checking
+    session_descriptions = {
+        'R': 'Race - Main event',
+        'Q': 'Qualifying - Grid positions', 
+        'S': 'Sprint - Short race',
+        'FP3': 'Free Practice 3 - Final practice',
+        'FP2': 'Free Practice 2 - Long runs',
+        'FP1': 'Free Practice 1 - Initial setup'
+    }
     
-    # Load button
+    session_type = st.sidebar.selectbox(
+        "Session",
+        ["R", "Q", "FP3", "FP2", "FP1", "S"],
+        format_func=lambda x: f"{x} - {session_descriptions.get(x, 'Session')}",
+        help="Select session type - availability checked when loading"
+    )
+    
+    # Load button with enhanced feedback
     load_button_text = f"🔄 Load {year} Session Data"
     
     if st.sidebar.button(load_button_text, type="primary", use_container_width=True):
+        # Clear any previous error state
+        if 'load_error' in st.session_state:
+            del st.session_state['load_error']
+        
         with st.spinner(f"Loading {event} {session_type} ({year})..."):
             session = load_session(year, event, session_type)
         
@@ -191,12 +201,28 @@ def render_sidebar():
                 lap_count = len(session.laps)
                 driver_count = len(session.laps['Driver'].unique())
                 st.sidebar.info(f"📊 {driver_count} drivers, {lap_count} laps")
+                
+                # Show session date if available
+                if hasattr(session, 'date') and session.date:
+                    st.sidebar.text(f"📅 {session.date}")
         else:
-            st.sidebar.error("❌ Failed to load session data")
-            if session_type not in available_sessions:
-                st.sidebar.warning("💡 This session may not be available")
+            st.session_state.load_error = True
+            st.sidebar.error("❌ No data available for this session")
+            
+            # Provide helpful suggestions
+            suggestions = []
+            if session_type == 'R':
+                suggestions.append("Try 'Q' (Qualifying) instead")
+            elif session_type == 'Q':
+                suggestions.append("Try 'FP3' (Free Practice 3) instead")
             else:
-                st.sidebar.info("💡 Try a different session or check connection")
+                suggestions.append("Try 'R' (Race) or 'Q' (Qualifying)")
+            
+            if year >= 2025:
+                suggestions.append("This session may not have occurred yet")
+            
+            for suggestion in suggestions:
+                st.sidebar.info(f"💡 {suggestion}")
     
     # Current session display
     if 'session' in st.session_state:
@@ -206,7 +232,7 @@ def render_sidebar():
         session_info = st.session_state.event_info
         session_year = st.session_state.get('year', 2024)
         
-        if session_year == 2025:
+        if session_year >= 2025:
             st.sidebar.success(f"🏁 **{session_info}** (LIVE)")
         else:
             st.sidebar.info(f"📊 {session_info}")
@@ -214,9 +240,6 @@ def render_sidebar():
         # Session details
         try:
             session = st.session_state.session
-            if hasattr(session, 'date') and session.date:
-                st.sidebar.text(f"📅 {session.date}")
-            
             if hasattr(session, 'laps'):
                 lap_count = len(session.laps)
                 driver_count = len(session.laps['Driver'].unique())
@@ -225,8 +248,6 @@ def render_sidebar():
         except:
             pass
     
-    return year, event, session_type, events
-
 def render_welcome_screen():
     """Welcome screen with latest race analysis"""
     st.markdown("## 🏎️ Latest F1 Race Analysis")
@@ -242,8 +263,8 @@ def render_welcome_screen():
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
             race_title = f"🏁 **{latest_race['event']} {latest_race['year']}**"
-            if latest_race['year'] >= 2024:
-                race_title += " *(Latest Season)*"
+            if latest_race['year'] >= 2025:
+                race_title += " *(LIVE SEASON)*"
             st.markdown(f"### {race_title}")
             
             if latest_race['status'] == 'race_complete':
@@ -269,7 +290,11 @@ def render_welcome_screen():
             st.metric("🔄 Total Laps", stats.get('total_laps', 0))
         
         # Auto-load button
-        if st.button("🔄 Analyze This Race", type="primary", use_container_width=True):
+        button_text = "🔄 Analyze This Race"
+        if latest_race['year'] >= 2025:
+            button_text = "🔄 Analyze This Live Race"
+            
+        if st.button(button_text, type="primary", use_container_width=True):
             st.session_state.session = session
             st.session_state.event_info = f"{latest_race['event']} {latest_race['session_type']} ({latest_race['year']})"
             st.session_state.year = latest_race['year']
@@ -362,7 +387,7 @@ def render_welcome_screen():
     highlights = get_recent_race_highlights()
     if highlights:
         for highlight in highlights:
-            year_badge = f"🏁 {highlight['year']}" if highlight['year'] >= 2024 else f"📚 {highlight['year']}"
+            year_badge = f"🏁 {highlight['year']}" if highlight['year'] >= 2025 else f"📚 {highlight['year']}"
             
             with st.expander(f"{year_badge} - {highlight['event']} ({highlight['session_date']})"):
                 col1, col2 = st.columns(2)
@@ -394,7 +419,12 @@ def render_welcome_screen():
         st.markdown("- Telemetry (throttle, brake, gear)")
         st.markdown("- Driver performance metrics")
     
-    st.info("💡 **Quick Start**: Click 'Analyze This Race' above or use the sidebar to explore different sessions!")
+    # Quick start message
+    available_years = get_available_years()
+    if available_years and max(available_years) >= 2025:
+        st.success("🏁 **Live 2025 Season Available**: Use the sidebar to explore the latest races!")
+    else:
+        st.info("💡 **Quick Start**: Use the sidebar to explore F1 races and sessions!")
 
 def render_session_overview(session, stats):
     """Render session overview with key metrics"""
@@ -450,6 +480,13 @@ def render_lap_analysis_tab(session):
         
         if lap_stats_df is not None:
             st.dataframe(lap_stats_df, use_container_width=True)
+            
+            # Add insights
+            try:
+                best_driver = lap_stats_df.loc[lap_stats_df['Best Lap'].str.replace('s', '').astype(float).idxmin(), 'Driver']
+                st.info(f"💡 **Session Leader**: {best_driver} set the fastest lap time")
+            except:
+                pass
         else:
             st.warning("No lap statistics available")
     else:
@@ -478,6 +515,13 @@ def render_sector_analysis_tab(session):
                 st.metric("🟨 Fastest Sector 2", fastest_s2['Driver'], f"{fastest_s2['Sector2']:.3f}s")
             with col3:
                 st.metric("🟩 Fastest Sector 3", fastest_s3['Driver'], f"{fastest_s3['Sector3']:.3f}s")
+            
+            # Add overall fastest insight
+            try:
+                best_overall = df.loc[df['Total'].idxmin(), 'Driver']
+                st.success(f"🏁 **Overall Fastest**: {best_overall} had the best combined sector times")
+            except:
+                pass
         
         st.subheader("📊 Detailed Sector Times")
         st.dataframe(df.round(3), use_container_width=True)
@@ -525,6 +569,15 @@ def render_telemetry_tab(session):
                         st.metric("📊 Avg Speed", f"{insights[driver2]['avg_speed']:.1f} km/h")
                         if insights[driver2]['avg_throttle']:
                             st.metric("🔥 Avg Throttle", f"{insights[driver2]['avg_throttle']:.1f}%")
+                    
+                    # Add comparison insights
+                    try:
+                        speed_diff = insights[driver1]['max_speed'] - insights[driver2]['max_speed']
+                        if abs(speed_diff) > 1:
+                            faster_driver = driver1 if speed_diff > 0 else driver2
+                            st.info(f"🏁 **Speed Advantage**: {faster_driver} had {abs(speed_diff):.1f} km/h higher max speed")
+                    except:
+                        pass
             else:
                 st.warning("⚠️ Telemetry data not available for selected drivers")
                 st.info("💡 Telemetry is typically available for recent races")
@@ -570,6 +623,14 @@ def render_position_tracking_tab(session):
                 
                 st.subheader("📋 Complete Position Changes")
                 st.dataframe(changes_df, use_container_width=True)
+                
+                # Add race hero insight
+                try:
+                    best_gainer = changes_df.loc[changes_df['Positions Gained'].idxmax()]
+                    if best_gainer['Positions Gained'] > 0:
+                        st.success(f"🏆 **Race Hero**: {best_gainer['Driver']} gained {best_gainer['Positions Gained']} positions!")
+                except:
+                    pass
         else:
             st.warning("⚠️ Position data not available")
     else:
@@ -599,8 +660,12 @@ def render_speed_traces_tab(session):
             col1, col2 = st.columns(2)
             with col1:
                 st.info("💡 **Speed Traces**: Speed variations for fastest laps")
+                st.markdown("- **High speed**: Straights and fast corners")
+                st.markdown("- **Low speed**: Tight corners and chicanes")
             with col2:
-                st.info("🏁 **Analysis**: Compare braking and acceleration points")
+                st.info("🏁 **Track Analysis**: Compare driver approaches")
+                st.markdown("- **Braking points**: Where speed drops rapidly")
+                st.markdown("- **Acceleration**: Where speed increases")
         else:
             st.warning("⚠️ Speed trace data not available")
     else:
@@ -611,7 +676,7 @@ def render_data_export_tab(session):
     st.header("📋 Data Export")
     
     # Session overview
-    st.subheader("📊 Session Data")
+    st.subheader("📊 Session Data Overview")
     
     try:
         total_laps = len(session.laps)
@@ -676,60 +741,17 @@ def render_data_export_tab(session):
         # File info
         file_size = len(csv_data.encode('utf-8')) / 1024
         st.info(f"💾 File size: {file_size:.1f} KB")
+        
+        # Show what's included
+        with st.expander("📋 Data Columns Description"):
+            st.markdown("""
+            **Available Data Columns:**
+            - **Driver**: Driver name/code
+            - **LapNumber**: Lap number in session  
+            - **LapTime**: Total lap time
+            - **Sector1Time, Sector2Time, Sector3Time**: Individual sector times
+            - **Position**: Track position during lap
+            - **SpeedI1, SpeedI2, SpeedFL, SpeedST**: Speed measurements at track points
+            """)
     else:
-        st.error("❌ No data available for export")
-
-def main():
-    """Main application function"""
-    # Setup page
-    setup_page()
-    
-    # Render header
-    render_header()
-    
-    # Render sidebar
-    year, event, session_type, events = render_sidebar()
-    
-    # Main content
-    if 'session' not in st.session_state:
-        render_welcome_screen()
-        return
-    
-    # Session analysis
-    session = st.session_state.session
-    stats = get_session_stats(session)
-    
-    # Session overview
-    render_session_overview(session, stats)
-    st.markdown("---")
-    
-    # Analysis tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Lap Analysis", 
-        "⏱️ Sector Times", 
-        "📈 Telemetry", 
-        "🏁 Position Tracking",
-        "🎯 Speed Traces",
-        "📋 Data Export"
-    ])
-    
-    with tab1:
-        render_lap_analysis_tab(session)
-    
-    with tab2:
-        render_sector_analysis_tab(session)
-    
-    with tab3:
-        render_telemetry_tab(session)
-    
-    with tab4:
-        render_position_tracking_tab(session)
-    
-    with tab5:
-        render_speed_traces_tab(session)
-    
-    with tab6:
-        render_data_export_tab(session)
-
-if __name__ == "__main__":
-    main()
+        st
