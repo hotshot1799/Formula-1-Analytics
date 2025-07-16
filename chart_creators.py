@@ -1,5 +1,6 @@
 """
 Chart creation functions for F1 Analytics Dashboard
+Fixed lap time formatting in all charts
 """
 import streamlit as st
 import pandas as pd
@@ -7,34 +8,65 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
+def format_lap_time_for_display(lap_time):
+    """Format lap time for chart display"""
+    try:
+        if pd.isna(lap_time):
+            return "N/A"
+        
+        if hasattr(lap_time, 'total_seconds'):
+            total_seconds = lap_time.total_seconds()
+        else:
+            total_seconds = float(lap_time)
+        
+        if total_seconds <= 0 or total_seconds > 600:
+            return "N/A"
+        
+        minutes = int(total_seconds // 60)
+        seconds = total_seconds % 60
+        return f"{minutes}:{seconds:06.3f}"
+    except:
+        return "N/A"
+
 def create_lap_times_chart(session, selected_drivers):
-    """Create optimized lap times chart"""
+    """Create lap times chart with proper time formatting"""
     fig = go.Figure()
     
     # Limit drivers for performance
     drivers_to_show = selected_drivers[:10]
     
     for i, driver in enumerate(drivers_to_show):
-        driver_laps = session.laps[session.laps['Driver'] == driver]
-        valid_laps = driver_laps[driver_laps['LapTime'].notna()]
-        
-        if not valid_laps.empty:
-            lap_times = [lap.total_seconds() for lap in valid_laps['LapTime']]
-            lap_numbers = valid_laps['LapNumber'].tolist()
+        try:
+            driver_laps = session.laps[session.laps['Driver'] == driver]
+            valid_laps = driver_laps[driver_laps['LapTime'].notna()]
             
-            # Use different colors for better distinction
-            color = px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
-            
-            fig.add_trace(go.Scatter(
-                x=lap_numbers,
-                y=lap_times,
-                mode='lines+markers',
-                name=driver,
-                line=dict(width=2, color=color),
-                marker=dict(size=3),
-                hovertemplate=f'<b>{driver}</b><br>Lap: %{{x}}<br>Time: %{{y:.3f}}s<extra></extra>'
-            ))
+            if not valid_laps.empty:
+                lap_times = [lap.total_seconds() for lap in valid_laps['LapTime']]
+                lap_numbers = valid_laps['LapNumber'].tolist()
+                
+                # Create hover text with proper formatting
+                hover_text = [
+                    f"<b>{driver}</b><br>Lap: {lap_num}<br>Time: {format_lap_time_for_display(time_sec)}"
+                    for lap_num, time_sec in zip(lap_numbers, lap_times)
+                ]
+                
+                # Use different colors for better distinction
+                color = px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
+                
+                fig.add_trace(go.Scatter(
+                    x=lap_numbers,
+                    y=lap_times,
+                    mode='lines+markers',
+                    name=driver,
+                    line=dict(width=2, color=color),
+                    marker=dict(size=3),
+                    hovertemplate='%{text}<extra></extra>',
+                    text=hover_text
+                ))
+        except Exception as e:
+            continue
     
+    # Format y-axis to show lap times properly
     fig.update_layout(
         title="Lap Times Analysis",
         xaxis_title="Lap Number",
@@ -47,16 +79,18 @@ def create_lap_times_chart(session, selected_drivers):
     return fig
 
 def create_sector_analysis_chart(session):
-    """Create sector analysis chart"""
+    """Create sector analysis chart with better error handling"""
     fastest_laps_data = []
     
     # Get fastest lap for each driver
     for driver in session.laps['Driver'].unique():
         try:
             fastest_lap = session.laps.pick_driver(driver).pick_fastest()
-            if (pd.notna(fastest_lap['Sector1Time']) and 
-                pd.notna(fastest_lap['Sector2Time']) and 
-                pd.notna(fastest_lap['Sector3Time'])):
+            
+            # Check if sector data is available
+            if (pd.notna(fastest_lap.get('Sector1Time')) and 
+                pd.notna(fastest_lap.get('Sector2Time')) and 
+                pd.notna(fastest_lap.get('Sector3Time'))):
                 
                 fastest_laps_data.append({
                     'Driver': driver,
@@ -65,7 +99,7 @@ def create_sector_analysis_chart(session):
                     'Sector3': fastest_lap['Sector3Time'].total_seconds(),
                     'Total': fastest_lap['LapTime'].total_seconds()
                 })
-        except:
+        except Exception as e:
             continue
     
     if not fastest_laps_data:
@@ -76,6 +110,7 @@ def create_sector_analysis_chart(session):
     # Create sector comparison chart
     fig = go.Figure()
     
+    # Add hover templates with proper time formatting
     fig.add_trace(go.Bar(
         name='Sector 1', 
         x=df['Driver'], 
@@ -109,7 +144,7 @@ def create_sector_analysis_chart(session):
     return fig, df
 
 def create_telemetry_chart(session, driver1, driver2):
-    """Create advanced telemetry comparison chart"""
+    """Create telemetry comparison chart with error handling"""
     try:
         # Get fastest laps for both drivers
         lap1 = session.laps.pick_driver(driver1).pick_fastest()
@@ -119,7 +154,10 @@ def create_telemetry_chart(session, driver1, driver2):
         tel1 = lap1.get_telemetry()
         tel2 = lap2.get_telemetry()
         
-        # Create subplots for multiple telemetry metrics
+        if tel1.empty or tel2.empty:
+            return None
+        
+        # Create subplots
         fig = make_subplots(
             rows=3, cols=1,
             subplot_titles=['Speed Comparison', 'Throttle vs Brake', 'Gear Changes'],
@@ -139,7 +177,7 @@ def create_telemetry_chart(session, driver1, driver2):
             row=1, col=1
         )
         
-        # Throttle and Brake
+        # Throttle and Brake (if available)
         if 'Throttle' in tel1.columns and 'Brake' in tel1.columns:
             fig.add_trace(
                 go.Scatter(x=tel1['Distance'], y=tel1['Throttle'], 
@@ -162,7 +200,7 @@ def create_telemetry_chart(session, driver1, driver2):
                 row=2, col=1
             )
         
-        # Gear changes
+        # Gear changes (if available)
         if 'nGear' in tel1.columns:
             fig.add_trace(
                 go.Scatter(x=tel1['Distance'], y=tel1['nGear'], 
@@ -188,93 +226,36 @@ def create_telemetry_chart(session, driver1, driver2):
         return None
 
 def create_position_tracking_chart(session):
-    """Create position tracking chart for race sessions"""
-    if session.session_info['Type'] != 'R':
-        return None, None
+    """Create position tracking chart - now moved to position_tracking.py"""
+    # This function is now handled in the position tracking tab
+    # Import and use the function from there if needed
+    from ui.tabs.position_tracking import create_position_chart
+    from analysis_utils import get_position_data_safe, calculate_position_changes
     
     try:
-        # Get position data for each lap
-        position_data = []
-        
-        for lap_num in range(1, min(session.laps['LapNumber'].max() + 1, 71)):  # Limit to 70 laps
-            lap_data = session.laps[session.laps['LapNumber'] == lap_num]
-            for _, lap in lap_data.iterrows():
-                if pd.notna(lap['Position']):
-                    position_data.append({
-                        'LapNumber': lap_num,
-                        'Driver': lap['Driver'],
-                        'Position': lap['Position']
-                    })
-        
-        if not position_data:
+        position_df = get_position_data_safe(session)
+        if position_df is None:
             return None, None
         
-        df = pd.DataFrame(position_data)
-        
-        # Create position tracking chart
-        fig = go.Figure()
-        
-        # Show top 10 drivers for readability
-        top_drivers = df.groupby('Driver')['Position'].min().sort_values().head(10).index
-        
-        for i, driver in enumerate(top_drivers):
-            driver_data = df[df['Driver'] == driver]
-            color = px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
-            
-            fig.add_trace(go.Scatter(
-                x=driver_data['LapNumber'],
-                y=driver_data['Position'],
-                mode='lines+markers',
-                name=driver,
-                line=dict(width=2, color=color),
-                marker=dict(size=3)
-            ))
-        
-        fig.update_layout(
-            title="Position Changes Throughout the Race",
-            xaxis_title="Lap Number",
-            yaxis_title="Position",
-            yaxis=dict(autorange='reversed'),  # Lower position number at top
-            height=500
-        )
-        
-        # Calculate position changes
-        start_positions = df[df['LapNumber'] == 1][['Driver', 'Position']].dropna()
-        final_positions = df.groupby('Driver')['Position'].last().dropna()
-        
-        position_changes = []
-        for _, row in start_positions.iterrows():
-            driver = row['Driver']
-            start_pos = row['Position']
-            if driver in final_positions.index:
-                final_pos = final_positions[driver]
-                change = start_pos - final_pos  # Positive = gained positions
-                position_changes.append({
-                    'Driver': driver,
-                    'Start Position': int(start_pos),
-                    'Final Position': int(final_pos),
-                    'Positions Gained': int(change)
-                })
-        
-        changes_df = pd.DataFrame(position_changes).sort_values('Positions Gained', ascending=False)
+        fig = create_position_chart(position_df)
+        changes_df = calculate_position_changes(position_df)
         
         return fig, changes_df
         
     except Exception as e:
-        st.error(f"Error creating position chart: {e}")
         return None, None
 
 def create_speed_trace_chart(session, drivers):
-    """Create speed trace chart for track analysis"""
+    """Create speed trace chart with better error handling"""
     try:
         fig = go.Figure()
         
-        for i, driver in enumerate(drivers[:5]):  # Limit to 5 drivers for performance
+        for i, driver in enumerate(drivers[:5]):  # Limit to 5 drivers
             try:
                 fastest_lap = session.laps.pick_driver(driver).pick_fastest()
                 telemetry = fastest_lap.get_telemetry()
                 
-                if 'Speed' in telemetry.columns and 'Distance' in telemetry.columns:
+                if not telemetry.empty and 'Speed' in telemetry.columns and 'Distance' in telemetry.columns:
                     color = px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
                     
                     fig.add_trace(go.Scatter(
@@ -285,7 +266,7 @@ def create_speed_trace_chart(session, drivers):
                         line=dict(width=2, color=color),
                         hovertemplate=f'<b>{driver}</b><br>Distance: %{{x:.0f}}m<br>Speed: %{{y:.1f}} km/h<extra></extra>'
                     ))
-            except:
+            except Exception as e:
                 continue
         
         fig.update_layout(
