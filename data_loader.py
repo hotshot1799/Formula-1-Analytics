@@ -228,17 +228,19 @@ def get_latest_race_data():
             if schedule.empty:
                 continue
             
-            # Sort by race date descending
-            schedule = schedule.sort_values('Session5DateUtc', ascending=False)
-            
             now_utc = datetime.now(timezone.utc)
             
-            for _, row in schedule.iterrows():
+            # For current year, filter to past events only (FP1 started or completed)
+            if year == current_year:
+                past_schedule = schedule[schedule['Session1DateUtc'] <= now_utc]
+            else:
+                past_schedule = schedule
+            
+            # Sort past events by race date descending (most recent past first)
+            past_schedule = past_schedule.sort_values('Session5DateUtc', ascending=False)
+            
+            for _, row in past_schedule.iterrows():
                 event_name = row['EventName']
-                
-                # For current year, skip if FP1 hasn't started yet
-                if year == current_year and row['Session1DateUtc'] > now_utc:
-                    continue
                 
                 # Try race session first
                 session = load_session(year, event_name, 'R')
@@ -262,7 +264,7 @@ def get_latest_race_data():
                         'status': 'qualifying_complete'
                     }
                 
-                # Try practice sessions (for ongoing events)
+                # Try practice sessions (for very recent events)
                 for st in ['FP3', 'FP2', 'FP1']:
                     session = load_session(year, event_name, st)
                     if session and hasattr(session, 'laps') and not session.laps.empty:
