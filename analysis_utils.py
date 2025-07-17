@@ -195,15 +195,17 @@ def calculate_position_changes(position_df):
         # Get session from session_state (assuming it's stored there)
         session = st.session_state.session
         
-        # Use session.results for accurate start and final positions (handles penalties)
+        # Use session.results for accurate start/final positions and full names
         if hasattr(session, 'results') and not session.results.empty:
             results = session.results
             start_positions = results['GridPosition'].dropna().astype(int)
             final_positions = results['Position'].dropna().astype(int)
+            full_names = results['FullName']  # Map driver codes to full names
         else:
-            # Fallback to original method if results unavailable
+            # Fallback if results unavailable
             start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
             final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
+            full_names = {}  # No full names available in fallback
         
         changes = []
         
@@ -215,8 +217,11 @@ def calculate_position_changes(position_df):
                 if start_pos is not None and final_pos is not None:
                     positions_gained = start_pos - final_pos  # Positive = gained (lower number better)
                     
+                    full_name = full_names.get(driver, driver)  # Use full name if available, else code
+                    
                     changes.append({
                         'Driver': driver,
+                        'Full Name': full_name,
                         'Start Position': start_pos,
                         'Final Position': final_pos,
                         'Positions Gained': positions_gained
