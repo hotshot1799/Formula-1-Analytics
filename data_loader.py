@@ -51,21 +51,22 @@ def get_available_years():
 
 @st.cache_data(ttl=1800, show_spinner=False)  # 30 minutes cache
 def get_schedule(year):
-    """Get F1 schedule directly from FastF1 API"""
+    """Get F1 schedule directly from FastF1 API, filtered to past events for current year"""
     try:
         schedule = fastf1.get_event_schedule(year)
         if schedule.empty:
             st.warning(f"No events found for {year} season")
             return []
         
-        # Return the actual event names from FastF1
         events = schedule['EventName'].tolist()
         
-        # For current year, try to filter to events that likely have data
+        # For current year, filter to past events only (race date <= now)
         if year == datetime.now().year:
-            # For ongoing season, return all events (lazy loading will determine availability)
-            return events
+            now_utc = datetime.now(timezone.utc)
+            past_schedule = schedule[schedule['Session5DateUtc'] <= now_utc]  # Session5 is the race
+            events = past_schedule.sort_values('Session5DateUtc', ascending=False)['EventName'].tolist()  # Most recent first
         
+        # For past years, return all (assumed complete)
         return events
         
     except Exception as e:
@@ -74,15 +75,38 @@ def get_schedule(year):
 
 @st.cache_data(ttl=1800, show_spinner=False)  # 30 minutes cache
 def load_session(year, event, session_type):
+    """Load F1 session data with lazy loading approach"""
     try:
+        # Direct session loading without pre-checking
         session = fastf1.get_session(year, event, session_type)
+        
         if session is None:
             return None
-        session.load(telemetry=False, laps=True, weather=True)  # Load only essentials first for speed
+            
+        # Load the session data
+        session.load()
+        
+        # Verify session has meaningful data
         if hasattr(session, 'laps') and not session.laps.empty:
             return session
+        else:
+            return None
+            
     except Exception as e:
-        # Existing error handling
+        error_msg = str(e).lower()
+        
+        # Provide helpful error messages based on error type
+        if "not yet available" in error_msg:
+            st.info(f"🏁 {event} {session_type} hasn't occurred yet or data is still being processed")
+        elif "no data" in error_msg:
+            st.warning(f"📊 No data available for {event} {session_type}")
+        elif "connection" in error_msg or "timeout" in error_msg:
+            st.error(f"🌐 Network error loading {event} {session_type}. Please try again.")
+        elif "403" in error_msg or "forbidden" in error_msg:
+            st.error(f"🔒 Access restricted for {event} {session_type}. Data may not be released yet.")
+        else:
+            st.error(f"❌ Error loading {event} {session_type}: {str(e)[:100]}")
+        
         return None
 
 def get_session_stats(session):
@@ -194,65 +218,46 @@ def get_race_weekend_summary(year, event):
         'status': 'unknown'  # Will be determined on load
     }
 
-@st.cache_data(ttl=3600, show_spinner=False)  # Cache the result for 1 hour to avoid recomputing on every rerun
 def get_latest_race_data():
     """Get the most recent race data available"""
     try:
         current_year = datetime.now().year
         
-        # Check recent years, starting with current
-        for year in [current_year, current_year-1, current_year-2]:
-            schedule = fastf1.get_event_schedule(year)
-            if schedule.empty:
+        # Check recent years
+        for year in [current_year, current_year-1]:
+            events = get_schedule(year)
+            if not events:
                 continue
             
-            now_utc = datetime.now(timezone.utc)
-            
-            # For current year, filter to past events only (FP1 started or completed)
-            if year == current_year:
-                past_schedule = schedule[schedule['Session1DateUtc'] <= now_utc]
-            else:
-                past_schedule = schedule
-            
-            # Sort past events by race date descending (most recent past first)
-            past_schedule = past_schedule.sort_values('Session5DateUtc', ascending=False)
-            
-            for _, row in past_schedule.iterrows():
-                event_name = row['EventName']
-                
+            # For ongoing season, events are already filtered and sorted recent-first
+            for event in events:
                 # Try race session first
-                session = load_session(year, event_name, 'R')
-                if session and hasattr(session, 'laps') and not session.laps.empty:
-                    return {
-                        'year': year,
-                        'event': event_name,
-                        'session_type': 'R',
-                        'session': session,
-                        'status': 'race_complete'
-                    }
-                
-                # Try qualifying if no race data
-                session = load_session(year, event_name, 'Q')
-                if session and hasattr(session, 'laps') and not session.laps.empty:
-                    return {
-                        'year': year,
-                        'event': event_name,
-                        'session_type': 'Q',
-                        'session': session,
-                        'status': 'qualifying_complete'
-                    }
-                
-                # Try practice sessions (for very recent events)
-                for st in ['FP3', 'FP2', 'FP1']:
-                    session = load_session(year, event_name, st)
+                try:
+                    session = load_session(year, event, 'R')
                     if session and hasattr(session, 'laps') and not session.laps.empty:
                         return {
                             'year': year,
-                            'event': event_name,
-                            'session_type': st,
+                            'event': event,
+                            'session_type': 'R',
                             'session': session,
-                            'status': 'practice_complete'
+                            'status': 'race_complete'
                         }
+                except:
+                    pass
+                
+                # Try qualifying if no race data
+                try:
+                    session = load_session(year, event, 'Q')
+                    if session and hasattr(session, 'laps') and not session.laps.empty:
+                        return {
+                            'year': year,
+                            'event': event,
+                            'session_type': 'Q',
+                            'session': session,
+                            'status': 'qualifying_complete'
+                        }
+                except:
+                    pass
         
         return None
         

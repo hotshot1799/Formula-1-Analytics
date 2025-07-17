@@ -4,6 +4,7 @@ Telemetry analysis tab
 import streamlit as st
 from chart_creators import create_telemetry_chart
 from analysis_utils import get_telemetry_insights
+from data_loader import load_session
 
 def render_telemetry_tab(session):
     """Render telemetry analysis tab"""
@@ -12,6 +13,45 @@ def render_telemetry_tab(session):
     available_drivers = session.laps['Driver'].unique().tolist()
     
     if len(available_drivers) >= 2:
+        # Add this new block for GP-specific telemetry handling
+        telemetry_available = False
+        try:
+            # Quick check for telemetry in current session
+            sample_lap = session.laps.pick_fastest()
+            tel_sample = sample_lap.get_telemetry()
+            if not tel_sample.empty and 'Speed' in tel_sample.columns:
+                telemetry_available = True
+        except:
+            pass
+
+        if not telemetry_available:
+            st.warning("⚠️ Telemetry data not available in the current session (common for recent 2025 sessions).")
+            
+            # Try other sessions from the same GP
+            session_types_to_try = ['Q', 'FP3', 'FP2', 'FP1'] if st.session_state.session_type == 'R' else ['R', 'Q', 'FP3', 'FP2', 'FP1']
+            session_types_to_try = [st for st in session_types_to_try if st != st.session_state.session_type]  # Skip current
+            
+            for alt_type in session_types_to_try:
+                st.info(f"Checking {alt_type} session for this GP...")
+                with st.spinner(f"Loading {alt_type} telemetry..."):
+                    alt_session = load_session(st.session_state.year, st.session_state.event, alt_type)
+                    if alt_session:
+                        try:
+                            alt_sample_lap = alt_session.laps.pick_fastest()
+                            alt_tel = alt_sample_lap.get_telemetry()
+                            if not alt_tel.empty and 'Speed' in alt_tel.columns:
+                                st.session_state.session = alt_session
+                                st.session_state.session_type = alt_type
+                                st.session_state.event_info = f"{st.session_state.event} {alt_type} ({st.session_state.year}) - Telemetry Fallback"
+                                st.success(f"✅ Telemetry loaded from {alt_type} session of this GP!")
+                                st.rerun()
+                        except:
+                            continue
+            
+            # If none found
+            st.error("❌ No telemetry available for any session in this GP. Try selecting an older Grand Prix via the sidebar (e.g., 2024 events often have full data).")
+            return  # Stop rendering if no telemetry
+        
         col1, col2 = st.columns(2)
         with col1:
             driver1 = st.selectbox("Primary Driver", available_drivers, key="tel_driver1")
