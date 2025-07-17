@@ -58,6 +58,9 @@ def get_schedule(year):
             st.warning(f"No events found for {year} season")
             return []
         
+        # Ensure Session5DateUtc is datetime with UTC
+        schedule['Session5DateUtc'] = pd.to_datetime(schedule['Session5DateUtc'], utc=True)
+        
         events = schedule['EventName'].tolist()
         
         # For current year, filter to past events only (race date <= now)
