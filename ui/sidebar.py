@@ -60,6 +60,8 @@ def render_sidebar():
             st.session_state.session = session
             st.session_state.event_info = f"{event} {session_type} ({year})"
             st.session_state.year = year
+            st.session_state.event = event
+            st.session_state.session_type = session_type
             st.sidebar.success("✅ Loaded!")
             
             # Show info
