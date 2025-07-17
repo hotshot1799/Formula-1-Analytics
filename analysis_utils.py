@@ -192,28 +192,34 @@ def calculate_position_changes(position_df):
         if position_df is None or position_df.empty:
             return None
         
-        # Get starting and final positions
-        start_positions = position_df[position_df['LapNumber'] == position_df['LapNumber'].min()]
-        final_positions = position_df.groupby('Driver')['Position'].last()
+        # Get session from session_state (assuming it's stored there)
+        session = st.session_state.session
+        
+        # Use session.results for accurate start and final positions (handles penalties)
+        if hasattr(session, 'results') and not session.results.empty:
+            results = session.results
+            start_positions = results['GridPosition'].dropna().astype(int)
+            final_positions = results['Position'].dropna().astype(int)
+        else:
+            # Fallback to original method if results unavailable
+            start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
+            final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
         
         changes = []
         
         for driver in final_positions.index:
             try:
-                start_pos_data = start_positions[start_positions['Driver'] == driver]
-                if not start_pos_data.empty:
-                    start_pos = start_pos_data['Position'].iloc[0]
-                    final_pos = final_positions[driver]
-                    
-                    # Position gained = started lower number, finished higher number
-                    # (Position 1 is better than Position 20)
-                    positions_gained = start_pos - final_pos  # Positive = gained positions
+                start_pos = start_positions.get(driver, None)
+                final_pos = final_positions.get(driver, None)
+                
+                if start_pos is not None and final_pos is not None:
+                    positions_gained = start_pos - final_pos  # Positive = gained (lower number better)
                     
                     changes.append({
                         'Driver': driver,
-                        'Start Position': int(start_pos),
-                        'Final Position': int(final_pos),
-                        'Positions Gained': int(positions_gained)
+                        'Start Position': start_pos,
+                        'Final Position': final_pos,
+                        'Positions Gained': positions_gained
                     })
             except Exception:
                 continue
