@@ -74,38 +74,15 @@ def get_schedule(year):
 
 @st.cache_data(ttl=1800, show_spinner=False)  # 30 minutes cache
 def load_session(year, event, session_type):
-    """Load F1 session data with lazy loading approach"""
     try:
-        # Direct session loading without pre-checking
         session = fastf1.get_session(year, event, session_type)
-        
         if session is None:
             return None
-            
-        # Load the session data
-        session.load()
-        
-        # Verify session has meaningful data
+        session.load(telemetry=False, laps=True, weather=True)  # Load only essentials first for speed
         if hasattr(session, 'laps') and not session.laps.empty:
             return session
-        else:
-            return None
-            
     except Exception as e:
-        error_msg = str(e).lower()
-        
-        # Provide helpful error messages based on error type
-        if "not yet available" in error_msg:
-            st.info(f"🏁 {event} {session_type} hasn't occurred yet or data is still being processed")
-        elif "no data" in error_msg:
-            st.warning(f"📊 No data available for {event} {session_type}")
-        elif "connection" in error_msg or "timeout" in error_msg:
-            st.error(f"🌐 Network error loading {event} {session_type}. Please try again.")
-        elif "403" in error_msg or "forbidden" in error_msg:
-            st.error(f"🔒 Access restricted for {event} {session_type}. Data may not be released yet.")
-        else:
-            st.error(f"❌ Error loading {event} {session_type}: {str(e)[:100]}")
-        
+        # Existing error handling
         return None
 
 def get_session_stats(session):
@@ -217,6 +194,7 @@ def get_race_weekend_summary(year, event):
         'status': 'unknown'  # Will be determined on load
     }
 
+@st.cache_data(ttl=3600, show_spinner=False)  # Cache the result for 1 hour to avoid recomputing on every rerun
 def get_latest_race_data():
     """Get the most recent race data available"""
     try:

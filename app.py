@@ -2,6 +2,8 @@
 F1 Analytics Dashboard - Streamlined Main App
 Clean, fast, and modular
 """
+fastf1.Cache.enable_cache(tempfile.mkdtemp())
+
 import streamlit as st
 from ui.page_setup import setup_page
 from ui.header import render_header
