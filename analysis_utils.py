@@ -187,25 +187,89 @@ def get_position_data_safe(session):
         return None
 
 def calculate_position_changes(position_df):
-    """Calculate position changes throughout the race"""
+    """Calculate position changes throughout the race with proper driver names"""
     try:
         if position_df is None or position_df.empty:
             return None
         
-        # Get session from session_state (assuming it's stored there)
+        # Get session from session_state
         session = st.session_state.session
         
-        # Use session.results for accurate start/final positions and full names
+        # Create a mapping from driver codes to full names
+        driver_name_mapping = {}
+        
+        # Try to get full names from session.results first
         if hasattr(session, 'results') and not session.results.empty:
-            results = session.results
-            start_positions = results['GridPosition'].dropna().astype(int)
-            final_positions = results['Position'].dropna().astype(int)
-            full_names = results['FullName']  # Map driver codes to full names
+            try:
+                for _, row in session.results.iterrows():
+                    if pd.notna(row.get('Abbreviation')) and pd.notna(row.get('FullName')):
+                        driver_name_mapping[row['Abbreviation']] = row['FullName']
+            except:
+                pass
+        
+        # If no results data, try to get names from session.laps
+        if not driver_name_mapping and hasattr(session, 'laps') and not session.laps.empty:
+            try:
+                # Check if FullName column exists in laps
+                if 'FullName' in session.laps.columns:
+                    unique_drivers = session.laps[['Driver', 'FullName']].drop_duplicates()
+                    for _, row in unique_drivers.iterrows():
+                        if pd.notna(row['FullName']):
+                            driver_name_mapping[row['Driver']] = row['FullName']
+            except:
+                pass
+        
+        # If still no mapping, create a fallback mapping using common F1 driver codes
+        if not driver_name_mapping:
+            # Common F1 driver code to name mapping (you can expand this)
+            common_drivers = {
+                'VER': 'Max Verstappen',
+                'HAM': 'Lewis Hamilton',
+                'RUS': 'George Russell',
+                'LEC': 'Charles Leclerc',
+                'SAI': 'Carlos Sainz',
+                'NOR': 'Lando Norris',
+                'PIA': 'Oscar Piastri',
+                'ALO': 'Fernando Alonso',
+                'STR': 'Lance Stroll',
+                'PER': 'Sergio Perez',
+                'OCO': 'Esteban Ocon',
+                'GAS': 'Pierre Gasly',
+                'TSU': 'Yuki Tsunoda',
+                'LAW': 'Liam Lawson',
+                'ALB': 'Alexander Albon',
+                'SAR': 'Logan Sargeant',
+                'MAG': 'Kevin Magnussen',
+                'HUL': 'Nico Hulkenberg',
+                'BOT': 'Valtteri Bottas',
+                'ZHO': 'Guanyu Zhou',
+                'RIC': 'Daniel Ricciardo',
+                'COL': 'Franco Colapinto',
+                'BEA': 'Ollie Bearman'
+            }
+            
+            # Use common mapping for known drivers
+            for driver in position_df['Driver'].unique():
+                if driver in common_drivers:
+                    driver_name_mapping[driver] = common_drivers[driver]
+                else:
+                    driver_name_mapping[driver] = driver  # Use code as fallback
+        
+        # Calculate position changes
+        if hasattr(session, 'results') and not session.results.empty:
+            # Use session results for accurate grid/final positions
+            try:
+                results = session.results
+                start_positions = results.set_index('Abbreviation')['GridPosition'].dropna().astype(int)
+                final_positions = results.set_index('Abbreviation')['Position'].dropna().astype(int)
+            except:
+                # Fallback to position_df
+                start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
+                final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
         else:
-            # Fallback if results unavailable
+            # Use position_df data
             start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
             final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
-            full_names = {}  # No full names available in fallback
         
         changes = []
         
@@ -217,7 +281,8 @@ def calculate_position_changes(position_df):
                 if start_pos is not None and final_pos is not None:
                     positions_gained = start_pos - final_pos  # Positive = gained (lower number better)
                     
-                    full_name = full_names.get(driver, driver)  # Use full name if available, else code
+                    # Get full name from mapping
+                    full_name = driver_name_mapping.get(driver, driver)
                     
                     changes.append({
                         'Driver': driver,
