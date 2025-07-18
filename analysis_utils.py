@@ -149,7 +149,7 @@ def get_season_indicator(year):
         return f"📚 {year} historical data", "info"
 
 def get_position_data_safe(session):
-    """Safely extract position data from session"""
+    """Safely extract position data from session with proper driver identification"""
     try:
         if not hasattr(session, 'laps') or session.laps.empty:
             return None
@@ -161,6 +161,49 @@ def get_position_data_safe(session):
         # Get laps with position data
         position_data = []
         
+        # Create driver mapping from driver number to driver code/name
+        driver_mapping = {}
+        
+        # Try to get driver info from session results first
+        if hasattr(session, 'results') and not session.results.empty:
+            try:
+                for _, row in session.results.iterrows():
+                    if pd.notna(row.get('DriverNumber')) and pd.notna(row.get('Abbreviation')):
+                        driver_num = str(int(row['DriverNumber']))
+                        driver_mapping[driver_num] = row['Abbreviation']
+                    # Also map abbreviation to itself
+                    if pd.notna(row.get('Abbreviation')):
+                        driver_mapping[row['Abbreviation']] = row['Abbreviation']
+            except:
+                pass
+        
+        # If no results mapping, try to extract from session.laps
+        if not driver_mapping and hasattr(session, 'laps'):
+            try:
+                # Check if we have both DriverNumber and Driver columns
+                if 'DriverNumber' in session.laps.columns and 'Driver' in session.laps.columns:
+                    driver_pairs = session.laps[['DriverNumber', 'Driver']].drop_duplicates()
+                    for _, row in driver_pairs.iterrows():
+                        if pd.notna(row['DriverNumber']) and pd.notna(row['Driver']):
+                            driver_num = str(int(row['DriverNumber']))
+                            driver_mapping[driver_num] = row['Driver']
+                            # Also map driver code to itself
+                            driver_mapping[row['Driver']] = row['Driver']
+            except:
+                pass
+        
+        # Fallback: use common F1 driver number to code mapping
+        if not driver_mapping:
+            common_driver_numbers = {
+                '1': 'VER', '11': 'PER', '44': 'HAM', '63': 'RUS',
+                '16': 'LEC', '55': 'SAI', '4': 'NOR', '81': 'PIA',
+                '14': 'ALO', '18': 'STR', '31': 'OCO', '10': 'GAS',
+                '22': 'TSU', '3': 'RIC', '23': 'ALB', '2': 'SAR',
+                '20': 'MAG', '27': 'HUL', '77': 'BOT', '24': 'ZHO',
+                '40': 'LAW', '43': 'COL', '50': 'BEA'
+            }
+            driver_mapping.update(common_driver_numbers)
+        
         # Group by lap number and get position for each driver
         for lap_num in session.laps['LapNumber'].unique():
             lap_data = session.laps[session.laps['LapNumber'] == lap_num]
@@ -168,12 +211,22 @@ def get_position_data_safe(session):
             for _, lap in lap_data.iterrows():
                 if pd.notna(lap['Position']):
                     try:
-                        position = int(float(lap['Position']))  # Convert safely
-                        position_data.append({
-                            'LapNumber': int(lap_num),
-                            'Driver': lap['Driver'],
-                            'Position': position
-                        })
+                        position = int(float(lap['Position']))
+                        
+                        # Get driver identifier - prefer Driver column over DriverNumber
+                        driver_id = None
+                        if 'Driver' in lap and pd.notna(lap['Driver']):
+                            driver_id = lap['Driver']
+                        elif 'DriverNumber' in lap and pd.notna(lap['DriverNumber']):
+                            driver_num = str(int(lap['DriverNumber']))
+                            driver_id = driver_mapping.get(driver_num, driver_num)
+                        
+                        if driver_id:
+                            position_data.append({
+                                'LapNumber': int(lap_num),
+                                'Driver': driver_id,
+                                'Position': position
+                            })
                     except (ValueError, TypeError):
                         continue
         
@@ -195,81 +248,61 @@ def calculate_position_changes(position_df):
         # Get session from session_state
         session = st.session_state.session
         
-        # Create a mapping from driver codes to full names
+        # Create enhanced driver name mapping
         driver_name_mapping = {}
+        driver_full_name_mapping = {}
         
-        # Try to get full names from session.results first
+        # Try to get driver info from session.results
         if hasattr(session, 'results') and not session.results.empty:
             try:
                 for _, row in session.results.iterrows():
-                    if pd.notna(row.get('Abbreviation')) and pd.notna(row.get('FullName')):
-                        driver_name_mapping[row['Abbreviation']] = row['FullName']
+                    # Map driver numbers to abbreviations
+                    if pd.notna(row.get('DriverNumber')) and pd.notna(row.get('Abbreviation')):
+                        driver_num = str(int(row['DriverNumber']))
+                        driver_name_mapping[driver_num] = row['Abbreviation']
+                    
+                    # Map abbreviations to full names
+                    if pd.notna(row.get('Abbreviation')):
+                        driver_code = row['Abbreviation']
+                        driver_name_mapping[driver_code] = driver_code
+                        
+                        if pd.notna(row.get('FullName')):
+                            driver_full_name_mapping[driver_code] = row['FullName']
             except:
                 pass
         
-        # If no results data, try to get names from session.laps
-        if not driver_name_mapping and hasattr(session, 'laps') and not session.laps.empty:
-            try:
-                # Check if FullName column exists in laps
-                if 'FullName' in session.laps.columns:
-                    unique_drivers = session.laps[['Driver', 'FullName']].drop_duplicates()
-                    for _, row in unique_drivers.iterrows():
-                        if pd.notna(row['FullName']):
-                            driver_name_mapping[row['Driver']] = row['FullName']
-            except:
-                pass
-        
-        # If still no mapping, create a fallback mapping using common F1 driver codes
+        # Enhanced fallback mapping with full names
         if not driver_name_mapping:
-            # Common F1 driver code to name mapping (you can expand this)
-            common_drivers = {
-                'VER': 'Max Verstappen',
-                'HAM': 'Lewis Hamilton',
-                'RUS': 'George Russell',
-                'LEC': 'Charles Leclerc',
-                'SAI': 'Carlos Sainz',
-                'NOR': 'Lando Norris',
-                'PIA': 'Oscar Piastri',
-                'ALO': 'Fernando Alonso',
-                'STR': 'Lance Stroll',
-                'PER': 'Sergio Perez',
-                'OCO': 'Esteban Ocon',
-                'GAS': 'Pierre Gasly',
-                'TSU': 'Yuki Tsunoda',
-                'LAW': 'Liam Lawson',
-                'ALB': 'Alexander Albon',
-                'SAR': 'Logan Sargeant',
-                'MAG': 'Kevin Magnussen',
-                'HUL': 'Nico Hulkenberg',
-                'BOT': 'Valtteri Bottas',
-                'ZHO': 'Guanyu Zhou',
-                'RIC': 'Daniel Ricciardo',
-                'COL': 'Franco Colapinto',
-                'BEA': 'Ollie Bearman'
+            driver_mapping_complete = {
+                '1': 'VER', '11': 'PER', '44': 'HAM', '63': 'RUS',
+                '16': 'LEC', '55': 'SAI', '4': 'NOR', '81': 'PIA',
+                '14': 'ALO', '18': 'STR', '31': 'OCO', '10': 'GAS',
+                '22': 'TSU', '3': 'RIC', '23': 'ALB', '2': 'SAR',
+                '20': 'MAG', '27': 'HUL', '77': 'BOT', '24': 'ZHO',
+                '40': 'LAW', '43': 'COL', '50': 'BEA'
             }
             
-            # Use common mapping for known drivers
-            for driver in position_df['Driver'].unique():
-                if driver in common_drivers:
-                    driver_name_mapping[driver] = common_drivers[driver]
-                else:
-                    driver_name_mapping[driver] = driver  # Use code as fallback
+            full_names = {
+                'VER': 'Max Verstappen', 'PER': 'Sergio Perez', 'HAM': 'Lewis Hamilton',
+                'RUS': 'George Russell', 'LEC': 'Charles Leclerc', 'SAI': 'Carlos Sainz',
+                'NOR': 'Lando Norris', 'PIA': 'Oscar Piastri', 'ALO': 'Fernando Alonso',
+                'STR': 'Lance Stroll', 'OCO': 'Esteban Ocon', 'GAS': 'Pierre Gasly',
+                'TSU': 'Yuki Tsunoda', 'RIC': 'Daniel Ricciardo', 'ALB': 'Alexander Albon',
+                'SAR': 'Logan Sargeant', 'MAG': 'Kevin Magnussen', 'HUL': 'Nico Hulkenberg',
+                'BOT': 'Valtteri Bottas', 'ZHO': 'Guanyu Zhou', 'LAW': 'Liam Lawson',
+                'COL': 'Franco Colapinto', 'BEA': 'Ollie Bearman'
+            }
+            
+            driver_name_mapping.update(driver_mapping_complete)
+            driver_full_name_mapping.update(full_names)
+            
+            # Also map codes to themselves
+            for code in full_names.keys():
+                driver_name_mapping[code] = code
         
         # Calculate position changes
-        if hasattr(session, 'results') and not session.results.empty:
-            # Use session results for accurate grid/final positions
-            try:
-                results = session.results
-                start_positions = results.set_index('Abbreviation')['GridPosition'].dropna().astype(int)
-                final_positions = results.set_index('Abbreviation')['Position'].dropna().astype(int)
-            except:
-                # Fallback to position_df
-                start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
-                final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
-        else:
-            # Use position_df data
-            start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
-            final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
+        start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
+        final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
         
         changes = []
         
@@ -279,13 +312,14 @@ def calculate_position_changes(position_df):
                 final_pos = final_positions.get(driver, None)
                 
                 if start_pos is not None and final_pos is not None:
-                    positions_gained = start_pos - final_pos  # Positive = gained (lower number better)
+                    positions_gained = start_pos - final_pos  # Positive = gained positions
                     
-                    # Get full name from mapping
-                    full_name = driver_name_mapping.get(driver, driver)
+                    # Get proper driver name
+                    driver_code = driver_name_mapping.get(driver, driver)
+                    full_name = driver_full_name_mapping.get(driver_code, driver_code)
                     
                     changes.append({
-                        'Driver': driver,
+                        'Driver': driver_code,
                         'Full Name': full_name,
                         'Start Position': start_pos,
                         'Final Position': final_pos,

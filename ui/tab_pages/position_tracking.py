@@ -8,7 +8,7 @@ from analysis_utils import get_position_data_safe, calculate_position_changes
 from data_loader import load_session
 
 def render_position_tracking_tab(session):
-    """Render position tracking tab with enhanced data handling"""
+    """Render position tracking tab with enhanced driver name display"""
     st.header("🏁 Race Position Tracking")
     
     # Check if this is a race session
@@ -46,8 +46,17 @@ def render_position_tracking_tab(session):
                 st.write(available_cols)
             return
         
-        # Show data summary
+        # Debug info to help understand the data
         st.success(f"✅ Position data loaded: {len(position_df)} position records")
+        
+        # Show a sample of the data for debugging
+        with st.expander("🔍 Debug: Sample Position Data"):
+            st.write("Sample drivers in position data:")
+            unique_drivers = position_df['Driver'].unique()
+            st.write(unique_drivers[:10])  # Show first 10 drivers
+            
+            st.write("Sample position records:")
+            st.dataframe(position_df.head(10))
         
         # Create position tracking chart
         try:
@@ -61,6 +70,13 @@ def render_position_tracking_tab(session):
             if changes_df is not None and not changes_df.empty:
                 st.subheader("📊 Position Changes Summary")
                 
+                # Debug the changes dataframe
+                with st.expander("🔍 Debug: Position Changes Data"):
+                    st.write("Changes dataframe columns:")
+                    st.write(list(changes_df.columns))
+                    st.write("Sample changes data:")
+                    st.dataframe(changes_df.head())
+                
                 col1, col2 = st.columns(2)
                 
                 with col1:
@@ -68,8 +84,13 @@ def render_position_tracking_tab(session):
                     gainers = changes_df[changes_df['Positions Gained'] > 0].head(5)
                     if not gainers.empty:
                         for _, row in gainers.iterrows():
-                            name = row.get('Full Name', row['Driver'])
-                            st.success(f"🔥 **{name}**: +{row['Positions Gained']} positions (P{row['Start Position']} → P{row['Final Position']})")
+                            # Prioritize full name, then driver code
+                            if 'Full Name' in row and pd.notna(row['Full Name']) and row['Full Name'] != row['Driver']:
+                                display_name = row['Full Name']
+                            else:
+                                display_name = row['Driver']
+                            
+                            st.success(f"🔥 **{display_name}**: +{row['Positions Gained']} positions (P{row['Start Position']} → P{row['Final Position']})")
                     else:
                         st.info("No significant position gainers in this race")
                 
@@ -78,21 +99,38 @@ def render_position_tracking_tab(session):
                     losers = changes_df[changes_df['Positions Gained'] < -1].head(5)
                     if not losers.empty:
                         for _, row in losers.iterrows():
-                            name = row.get('Full Name', row['Driver'])
-                            st.error(f"📉 **{name}**: {row['Positions Gained']} positions (P{row['Start Position']} → P{row['Final Position']})")
+                            # Prioritize full name, then driver code
+                            if 'Full Name' in row and pd.notna(row['Full Name']) and row['Full Name'] != row['Driver']:
+                                display_name = row['Full Name']
+                            else:
+                                display_name = row['Driver']
+                            
+                            st.error(f"📉 **{display_name}**: {row['Positions Gained']} positions (P{row['Start Position']} → P{row['Final Position']})")
                     else:
                         st.info("No significant position losses in this race")
                 
-                # Full results table
+                # Full results table with better formatting
                 st.subheader("📋 Complete Position Changes")
-                if 'Full Name' in changes_df.columns:
-                    display_df = changes_df[['Full Name', 'Start Position', 'Final Position', 'Positions Gained']]
-                    display_df = display_df.rename(columns={'Full Name': 'Driver'})  # Rename for clarity
-                else:
-                    display_df = changes_df
-                st.dataframe(display_df, use_container_width=True)
                 
-                # Race insights
+                # Create display dataframe with proper formatting
+                display_df = changes_df.copy()
+                
+                # Create a clean display name column
+                if 'Full Name' in display_df.columns:
+                    display_df['Display Name'] = display_df.apply(
+                        lambda row: row['Full Name'] if pd.notna(row['Full Name']) and row['Full Name'] != row['Driver'] else row['Driver'],
+                        axis=1
+                    )
+                else:
+                    display_df['Display Name'] = display_df['Driver']
+                
+                # Select and rename columns for display
+                final_display_df = display_df[['Display Name', 'Start Position', 'Final Position', 'Positions Gained']].copy()
+                final_display_df.columns = ['Driver', 'Start Position', 'Final Position', 'Positions Gained']
+                
+                st.dataframe(final_display_df, use_container_width=True)
+                
+                # Race insights with better name display
                 try:
                     best_gainer = changes_df.loc[changes_df['Positions Gained'].idxmax()]
                     worst_loser = changes_df.loc[changes_df['Positions Gained'].idxmin()]
@@ -102,16 +140,26 @@ def render_position_tracking_tab(session):
                     
                     with col1:
                         if best_gainer['Positions Gained'] > 0:
-                            name = best_gainer.get('Full Name', best_gainer['Driver'])
-                            st.success(f"**🏆 Race Hero**: {name} gained {best_gainer['Positions Gained']} positions!")
+                            # Get best display name
+                            if 'Full Name' in best_gainer and pd.notna(best_gainer['Full Name']) and best_gainer['Full Name'] != best_gainer['Driver']:
+                                hero_name = best_gainer['Full Name']
+                            else:
+                                hero_name = best_gainer['Driver']
+                            
+                            st.success(f"**🏆 Race Hero**: {hero_name} gained {best_gainer['Positions Gained']} positions!")
                         
                     with col2:
                         if worst_loser['Positions Gained'] < -1:
-                            name = worst_loser.get('Full Name', worst_loser['Driver'])
-                            st.error(f"**😔 Tough Day**: {name} lost {abs(worst_loser['Positions Gained'])} positions")
+                            # Get best display name
+                            if 'Full Name' in worst_loser and pd.notna(worst_loser['Full Name']) and worst_loser['Full Name'] != worst_loser['Driver']:
+                                loser_name = worst_loser['Full Name']
+                            else:
+                                loser_name = worst_loser['Driver']
                             
-                except:
-                    pass
+                            st.error(f"**😔 Tough Day**: {loser_name} lost {abs(worst_loser['Positions Gained'])} positions")
+                            
+                except Exception as e:
+                    st.error(f"Error in race insights: {e}")
             else:
                 st.warning("Could not calculate position changes")
                 
@@ -120,7 +168,7 @@ def render_position_tracking_tab(session):
             st.info("💡 Try a different race session")
 
 def create_position_chart(position_df):
-    """Create position tracking chart"""
+    """Create position tracking chart with proper driver names"""
     try:
         if position_df is None or position_df.empty:
             return None
@@ -150,14 +198,17 @@ def create_position_chart(position_df):
             if not driver_data.empty:
                 color = colors[i % len(colors)]
                 
+                # Use driver code as display name (should now be proper codes, not numbers)
+                display_name = driver
+                
                 fig.add_trace(go.Scatter(
                     x=driver_data['LapNumber'],
                     y=driver_data['Position'],
                     mode='lines+markers',
-                    name=driver,
+                    name=display_name,
                     line=dict(width=2, color=color),
                     marker=dict(size=4),
-                    hovertemplate=f'<b>{driver}</b><br>Lap: %{{x}}<br>Position: %{{y}}<extra></extra>'
+                    hovertemplate=f'<b>{display_name}</b><br>Lap: %{{x}}<br>Position: %{{y}}<extra></extra>'
                 ))
         
         # Update layout
