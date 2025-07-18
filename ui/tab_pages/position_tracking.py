@@ -1,7 +1,8 @@
 """
-Position tracking tab - fixed for better data handling
+Updated ui/tab_pages/position_tracking.py - Fixed to show driver names instead of numbers
 """
 import streamlit as st
+import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from analysis_utils import get_position_data_safe, calculate_position_changes
@@ -46,17 +47,8 @@ def render_position_tracking_tab(session):
                 st.write(available_cols)
             return
         
-        # Debug info to help understand the data
+        # Success message
         st.success(f"✅ Position data loaded: {len(position_df)} position records")
-        
-        # Show a sample of the data for debugging
-        with st.expander("🔍 Debug: Sample Position Data"):
-            st.write("Sample drivers in position data:")
-            unique_drivers = position_df['Driver'].unique()
-            st.write(unique_drivers[:10])  # Show first 10 drivers
-            
-            st.write("Sample position records:")
-            st.dataframe(position_df.head(10))
         
         # Create position tracking chart
         try:
@@ -69,13 +61,6 @@ def render_position_tracking_tab(session):
             
             if changes_df is not None and not changes_df.empty:
                 st.subheader("📊 Position Changes Summary")
-                
-                # Debug the changes dataframe
-                with st.expander("🔍 Debug: Position Changes Data"):
-                    st.write("Changes dataframe columns:")
-                    st.write(list(changes_df.columns))
-                    st.write("Sample changes data:")
-                    st.dataframe(changes_df.head())
                 
                 col1, col2 = st.columns(2)
                 
