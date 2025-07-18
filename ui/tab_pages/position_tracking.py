@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from analysis_utils import get_position_data_safe, calculate_position_changes
 from data_loader import load_session
+from team_colors import get_driver_color, initialize_session_colors
 
 def render_position_tracking_tab(session):
     """Render position tracking tab with enhanced driver name display"""
@@ -52,7 +53,11 @@ def render_position_tracking_tab(session):
         
         # Create position tracking chart
         try:
-            fig = create_position_chart(position_df)
+            # Initialize colors for this session
+            if 'driver_colors' not in st.session_state:
+                initialize_session_colors(session)
+            
+            fig = create_position_chart(position_df, session)
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
             
@@ -181,7 +186,7 @@ def create_position_chart(position_df):
             driver_data = position_df[position_df['Driver'] == driver].sort_values('LapNumber')
             
             if not driver_data.empty:
-                color = colors[i % len(colors)]
+                color = get_driver_color(driver, session)
                 
                 # Use driver code as display name (should now be proper codes, not numbers)
                 display_name = driver
@@ -191,8 +196,8 @@ def create_position_chart(position_df):
                     y=driver_data['Position'],
                     mode='lines+markers',
                     name=display_name,
-                    line=dict(width=2, color=color),
-                    marker=dict(size=4),
+                    line=dict(width=3, color=color),
+                    marker=dict(size=5, color=color),
                     hovertemplate=f'<b>{display_name}</b><br>Lap: %{{x}}<br>Position: %{{y}}<extra></extra>'
                 ))
         
@@ -208,6 +213,8 @@ def create_position_chart(position_df):
             ),
             height=600,
             hovermode='x unified',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
             legend=dict(
                 orientation="v",
                 yanchor="middle",

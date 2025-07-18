@@ -1,12 +1,14 @@
 """
-Chart creation functions for F1 Analytics Dashboard
-Fixed lap time formatting in all charts
+Updated chart_creators.py with dynamic F1 team colors
 """
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+
+# Import the dynamic team colors
+from team_colors import get_driver_color, initialize_session_colors, show_driver_color_legend
 
 def format_lap_time_for_display(lap_time):
     """Format lap time for chart display"""
@@ -29,8 +31,12 @@ def format_lap_time_for_display(lap_time):
         return "N/A"
 
 def create_lap_times_chart(session, selected_drivers):
-    """Create lap times chart with proper time formatting"""
+    """Create lap times chart with dynamic F1 team colors"""
     fig = go.Figure()
+    
+    # Initialize colors for this session if not already done
+    if 'driver_colors' not in st.session_state:
+        initialize_session_colors(session)
     
     # Limit drivers for performance
     drivers_to_show = selected_drivers[:10]
@@ -50,16 +56,16 @@ def create_lap_times_chart(session, selected_drivers):
                     for lap_num, time_sec in zip(lap_numbers, lap_times)
                 ]
                 
-                # Use different colors for better distinction
-                color = px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
+                # Use dynamic team colors
+                color = get_driver_color(driver, session)
                 
                 fig.add_trace(go.Scatter(
                     x=lap_numbers,
                     y=lap_times,
                     mode='lines+markers',
                     name=driver,
-                    line=dict(width=2, color=color),
-                    marker=dict(size=3),
+                    line=dict(width=3, color=color),
+                    marker=dict(size=4, color=color),
                     hovertemplate='%{text}<extra></extra>',
                     text=hover_text
                 ))
@@ -73,14 +79,20 @@ def create_lap_times_chart(session, selected_drivers):
         yaxis_title="Lap Time (seconds)",
         hovermode='x unified',
         height=500,
-        showlegend=True
+        showlegend=True,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
     )
     
     return fig
 
 def create_sector_analysis_chart(session):
-    """Create sector analysis chart with better error handling"""
+    """Create sector analysis chart with dynamic F1 team colors"""
     fastest_laps_data = []
+    
+    # Initialize colors for this session if not already done
+    if 'driver_colors' not in st.session_state:
+        initialize_session_colors(session)
     
     # Get fastest lap for each driver
     for driver in session.laps['Driver'].unique():
@@ -107,45 +119,66 @@ def create_sector_analysis_chart(session):
     
     df = pd.DataFrame(fastest_laps_data)
     
-    # Create sector comparison chart
+    # Create sector comparison chart with team colors
     fig = go.Figure()
     
-    # Add hover templates with proper time formatting
-    fig.add_trace(go.Bar(
-        name='Sector 1', 
-        x=df['Driver'], 
-        y=df['Sector1'], 
-        marker_color='#FF6B6B',
-        hovertemplate='<b>%{x}</b><br>Sector 1: %{y:.3f}s<extra></extra>'
-    ))
-    fig.add_trace(go.Bar(
-        name='Sector 2', 
-        x=df['Driver'], 
-        y=df['Sector2'], 
-        marker_color='#4ECDC4',
-        hovertemplate='<b>%{x}</b><br>Sector 2: %{y:.3f}s<extra></extra>'
-    ))
-    fig.add_trace(go.Bar(
-        name='Sector 3', 
-        x=df['Driver'], 
-        y=df['Sector3'], 
-        marker_color='#45B7D1',
-        hovertemplate='<b>%{x}</b><br>Sector 3: %{y:.3f}s<extra></extra>'
-    ))
+    # Add hover templates with proper time formatting and team colors
+    for driver in df['Driver']:
+        color = get_driver_color(driver, session)
+        
+        fig.add_trace(go.Bar(
+            name=f'{driver} S1', 
+            x=[driver], 
+            y=[df.loc[df['Driver'] == driver, 'Sector1'].iloc[0]], 
+            marker_color=color,
+            opacity=0.8,
+            width=0.25,
+            offsetgroup=1,
+            hovertemplate=f'<b>{driver}</b><br>Sector 1: %{{y:.3f}}s<extra></extra>'
+        ))
+        
+        fig.add_trace(go.Bar(
+            name=f'{driver} S2', 
+            x=[driver], 
+            y=[df.loc[df['Driver'] == driver, 'Sector2'].iloc[0]], 
+            marker_color=color,
+            opacity=0.6,
+            width=0.25,
+            offsetgroup=2,
+            hovertemplate=f'<b>{driver}</b><br>Sector 2: %{{y:.3f}}s<extra></extra>'
+        ))
+        
+        fig.add_trace(go.Bar(
+            name=f'{driver} S3', 
+            x=[driver], 
+            y=[df.loc[df['Driver'] == driver, 'Sector3'].iloc[0]], 
+            marker_color=color,
+            opacity=0.4,
+            width=0.25,
+            offsetgroup=3,
+            hovertemplate=f'<b>{driver}</b><br>Sector 3: %{{y:.3f}}s<extra></extra>'
+        ))
     
     fig.update_layout(
         title="Sector Times Comparison (Fastest Laps)",
         xaxis_title="Driver",
         yaxis_title="Time (seconds)",
         barmode='group',
-        height=500
+        height=500,
+        showlegend=False,  # Hide legend as it would be too cluttered
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
     )
     
     return fig, df
 
 def create_telemetry_chart(session, driver1, driver2):
-    """Create telemetry comparison chart with error handling"""
+    """Create telemetry comparison chart with dynamic F1 team colors"""
     try:
+        # Initialize colors for this session if not already done
+        if 'driver_colors' not in st.session_state:
+            initialize_session_colors(session)
+        
         # Get fastest laps for both drivers
         lap1 = session.laps.pick_driver(driver1).pick_fastest()
         lap2 = session.laps.pick_driver(driver2).pick_fastest()
@@ -157,6 +190,10 @@ def create_telemetry_chart(session, driver1, driver2):
         if tel1.empty or tel2.empty:
             return None
         
+        # Get team colors for both drivers
+        color1 = get_driver_color(driver1, session)
+        color2 = get_driver_color(driver2, session)
+        
         # Create subplots
         fig = make_subplots(
             rows=3, cols=1,
@@ -165,15 +202,15 @@ def create_telemetry_chart(session, driver1, driver2):
             shared_xaxes=True
         )
         
-        # Speed comparison
+        # Speed comparison with team colors
         fig.add_trace(
             go.Scatter(x=tel1['Distance'], y=tel1['Speed'], 
-                      name=f"{driver1} Speed", line=dict(color='#FF6B6B', width=2)),
+                      name=f"{driver1} Speed", line=dict(color=color1, width=3)),
             row=1, col=1
         )
         fig.add_trace(
             go.Scatter(x=tel2['Distance'], y=tel2['Speed'], 
-                      name=f"{driver2} Speed", line=dict(color='#4ECDC4', width=2)),
+                      name=f"{driver2} Speed", line=dict(color=color2, width=3)),
             row=1, col=1
         )
         
@@ -181,22 +218,22 @@ def create_telemetry_chart(session, driver1, driver2):
         if 'Throttle' in tel1.columns and 'Brake' in tel1.columns:
             fig.add_trace(
                 go.Scatter(x=tel1['Distance'], y=tel1['Throttle'], 
-                          name=f"{driver1} Throttle", line=dict(color='#FF6B6B', dash='dot')),
+                          name=f"{driver1} Throttle", line=dict(color=color1, dash='dot', width=2)),
                 row=2, col=1
             )
             fig.add_trace(
                 go.Scatter(x=tel1['Distance'], y=tel1['Brake'], 
-                          name=f"{driver1} Brake", line=dict(color='#FF0000', dash='dash')),
+                          name=f"{driver1} Brake", line=dict(color=color1, dash='dash', width=2)),
                 row=2, col=1
             )
             fig.add_trace(
                 go.Scatter(x=tel2['Distance'], y=tel2['Throttle'], 
-                          name=f"{driver2} Throttle", line=dict(color='#4ECDC4', dash='dot')),
+                          name=f"{driver2} Throttle", line=dict(color=color2, dash='dot', width=2)),
                 row=2, col=1
             )
             fig.add_trace(
                 go.Scatter(x=tel2['Distance'], y=tel2['Brake'], 
-                          name=f"{driver2} Brake", line=dict(color='#0000FF', dash='dash')),
+                          name=f"{driver2} Brake", line=dict(color=color2, dash='dash', width=2)),
                 row=2, col=1
             )
         
@@ -204,16 +241,21 @@ def create_telemetry_chart(session, driver1, driver2):
         if 'nGear' in tel1.columns:
             fig.add_trace(
                 go.Scatter(x=tel1['Distance'], y=tel1['nGear'], 
-                          name=f"{driver1} Gear", mode='lines', line=dict(color='#FF6B6B')),
+                          name=f"{driver1} Gear", mode='lines', line=dict(color=color1, width=2)),
                 row=3, col=1
             )
             fig.add_trace(
                 go.Scatter(x=tel2['Distance'], y=tel2['nGear'], 
-                          name=f"{driver2} Gear", mode='lines', line=dict(color='#4ECDC4')),
+                          name=f"{driver2} Gear", mode='lines', line=dict(color=color2, width=2)),
                 row=3, col=1
             )
         
-        fig.update_layout(height=800, title=f"Telemetry Comparison: {driver1} vs {driver2}")
+        fig.update_layout(
+            height=800, 
+            title=f"Telemetry Comparison: {driver1} vs {driver2}",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
         fig.update_xaxes(title_text="Distance (m)", row=3, col=1)
         fig.update_yaxes(title_text="Speed (km/h)", row=1, col=1)
         fig.update_yaxes(title_text="Input %", row=2, col=1)
@@ -225,29 +267,13 @@ def create_telemetry_chart(session, driver1, driver2):
         st.error(f"Error creating telemetry chart: {e}")
         return None
 
-def create_position_tracking_chart(session):
-    """Create position tracking chart - now moved to position_tracking.py"""
-    # This function is now handled in the position tracking tab
-    # Import and use the function from there if needed
-    from ui.tab_pages.position_tracking import create_position_chart
-    from analysis_utils import get_position_data_safe, calculate_position_changes
-    
-    try:
-        position_df = get_position_data_safe(session)
-        if position_df is None:
-            return None, None
-        
-        fig = create_position_chart(position_df)
-        changes_df = calculate_position_changes(position_df)
-        
-        return fig, changes_df
-        
-    except Exception as e:
-        return None, None
-
 def create_speed_trace_chart(session, drivers):
-    """Create speed trace chart with better error handling"""
+    """Create speed trace chart with dynamic F1 team colors"""
     try:
+        # Initialize colors for this session if not already done
+        if 'driver_colors' not in st.session_state:
+            initialize_session_colors(session)
+        
         fig = go.Figure()
         
         for i, driver in enumerate(drivers[:5]):  # Limit to 5 drivers
@@ -256,14 +282,14 @@ def create_speed_trace_chart(session, drivers):
                 telemetry = fastest_lap.get_telemetry()
                 
                 if not telemetry.empty and 'Speed' in telemetry.columns and 'Distance' in telemetry.columns:
-                    color = px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
+                    color = get_driver_color(driver, session)
                     
                     fig.add_trace(go.Scatter(
                         x=telemetry['Distance'],
                         y=telemetry['Speed'],
                         mode='lines',
                         name=driver,
-                        line=dict(width=2, color=color),
+                        line=dict(width=3, color=color),
                         hovertemplate=f'<b>{driver}</b><br>Distance: %{{x:.0f}}m<br>Speed: %{{y:.1f}} km/h<extra></extra>'
                     ))
             except Exception as e:
@@ -274,11 +300,85 @@ def create_speed_trace_chart(session, drivers):
             xaxis_title="Track Distance (m)",
             yaxis_title="Speed (km/h)",
             height=500,
-            hovermode='x unified'
+            hovermode='x unified',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
         )
         
         return fig
         
     except Exception as e:
         st.error(f"Error creating speed trace: {e}")
+        return None
+
+def create_position_chart(position_df, session):
+    """Create position tracking chart with dynamic F1 team colors"""
+    try:
+        if position_df is None or position_df.empty:
+            return None
+        
+        # Initialize colors for this session if not already done
+        if 'driver_colors' not in st.session_state:
+            initialize_session_colors(session)
+        
+        fig = go.Figure()
+        
+        # Get top drivers (those who finished in top 10 or had interesting position changes)
+        final_positions = position_df.groupby('Driver')['Position'].last()
+        
+        # Show top 10 finishers + drivers with big position changes
+        top_finishers = final_positions.sort_values().head(10).index.tolist()
+        
+        # Add drivers with significant position changes
+        start_positions = position_df.groupby('Driver')['Position'].first()
+        position_changes = start_positions - final_positions  # Positive = gained positions
+        big_movers = position_changes[abs(position_changes) >= 3].index.tolist()
+        
+        # Combine and deduplicate
+        drivers_to_show = list(set(top_finishers + big_movers))[:12]  # Limit to 12 for readability
+        
+        # Create traces for each driver with team colors
+        for i, driver in enumerate(drivers_to_show):
+            driver_data = position_df[position_df['Driver'] == driver].sort_values('LapNumber')
+            
+            if not driver_data.empty:
+                color = get_driver_color(driver, session)
+                
+                fig.add_trace(go.Scatter(
+                    x=driver_data['LapNumber'],
+                    y=driver_data['Position'],
+                    mode='lines+markers',
+                    name=driver,
+                    line=dict(width=3, color=color),
+                    marker=dict(size=5, color=color),
+                    hovertemplate=f'<b>{driver}</b><br>Lap: %{{x}}<br>Position: %{{y}}<extra></extra>'
+                ))
+        
+        # Update layout
+        fig.update_layout(
+            title="Race Position Changes Throughout the Race",
+            xaxis_title="Lap Number",
+            yaxis_title="Position",
+            yaxis=dict(
+                autorange='reversed',  # Position 1 at top
+                dtick=1,  # Show every position
+                range=[max(position_df['Position']) + 0.5, 0.5]  # Set range properly
+            ),
+            height=600,
+            hovermode='x unified',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            legend=dict(
+                orientation="v",
+                yanchor="middle",
+                y=0.5,
+                xanchor="left",
+                x=1.02
+            )
+        )
+        
+        return fig
+        
+    except Exception as e:
+        st.error(f"Error creating position chart: {e}")
         return None
