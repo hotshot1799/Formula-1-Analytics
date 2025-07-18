@@ -240,7 +240,7 @@ def get_position_data_safe(session):
         return None
 
 def calculate_position_changes(position_df):
-    """Calculate position changes throughout the race with proper driver names"""
+    """Calculate position changes throughout the race using starting grid positions"""
     try:
         if position_df is None or position_df.empty:
             return None
@@ -300,19 +300,74 @@ def calculate_position_changes(position_df):
             for code in full_names.keys():
                 driver_name_mapping[code] = code
         
-        # Calculate position changes
-        start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
-        final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
+        # PRIORITY: Use starting grid positions from session.results
+        start_positions = None
+        final_positions = None
         
+        if hasattr(session, 'results') and not session.results.empty:
+            try:
+                # Get starting grid positions (GridPosition) and final positions (Position)
+                results = session.results
+                
+                # Create mapping from driver abbreviations to positions
+                grid_positions = {}
+                finish_positions = {}
+                
+                for _, row in results.iterrows():
+                    if pd.notna(row.get('Abbreviation')):
+                        driver_code = row['Abbreviation']
+                        
+                        # Starting grid position
+                        if pd.notna(row.get('GridPosition')):
+                            try:
+                                grid_pos = int(row['GridPosition'])
+                                grid_positions[driver_code] = grid_pos
+                            except:
+                                pass
+                        
+                        # Final race position
+                        if pd.notna(row.get('Position')):
+                            try:
+                                final_pos = int(row['Position'])
+                                finish_positions[driver_code] = final_pos
+                            except:
+                                pass
+                
+                # Convert to pandas Series for consistency
+                if grid_positions:
+                    start_positions = pd.Series(grid_positions)
+                    st.info(f"📊 Using starting grid positions from race results")
+                    
+                if finish_positions:
+                    final_positions = pd.Series(finish_positions)
+                else:
+                    # Fallback to position data from lap analysis
+                    final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Could not extract grid positions from results: {e}")
+        
+        # FALLBACK: Use position data if no grid positions available
+        if start_positions is None:
+            st.warning("⚠️ No starting grid data available - using first lap positions as fallback")
+            start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
+        
+        if final_positions is None:
+            final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
+        
+        # Calculate position changes
         changes = []
         
-        for driver in final_positions.index:
+        # Get common drivers between start and final positions
+        common_drivers = set(start_positions.index) & set(final_positions.index)
+        
+        for driver in common_drivers:
             try:
                 start_pos = start_positions.get(driver, None)
                 final_pos = final_positions.get(driver, None)
                 
                 if start_pos is not None and final_pos is not None:
-                    positions_gained = start_pos - final_pos  # Positive = gained positions
+                    positions_gained = start_pos - final_pos  # Positive = gained positions (lower number is better)
                     
                     # Get proper driver name
                     driver_code = driver_name_mapping.get(driver, driver)
@@ -325,13 +380,21 @@ def calculate_position_changes(position_df):
                         'Final Position': final_pos,
                         'Positions Gained': positions_gained
                     })
-            except Exception:
+            except Exception as e:
+                st.error(f"Error processing driver {driver}: {e}")
                 continue
         
         if not changes:
+            st.error("❌ No position changes could be calculated")
             return None
         
-        return pd.DataFrame(changes).sort_values('Positions Gained', ascending=False)
+        # Sort by positions gained (most gained first)
+        changes_df = pd.DataFrame(changes).sort_values('Positions Gained', ascending=False)
+        
+        # Add some debug info
+        st.info(f"📊 Position changes calculated for {len(changes_df)} drivers")
+        
+        return changes_df
         
     except Exception as e:
         st.error(f"Error calculating position changes: {e}")
