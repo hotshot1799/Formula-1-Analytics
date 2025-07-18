@@ -1,5 +1,5 @@
 """
-Welcome screen component
+Updated ui/welcome.py - Context-aware welcome screen that shows currently loaded race
 """
 import streamlit as st
 import pandas as pd
@@ -7,7 +7,237 @@ from data_loader import get_latest_race_data, get_session_stats, get_available_y
 from chart_creators import create_lap_times_chart
 
 def render_welcome_screen():
-    """Welcome screen with latest race - always shown"""
+    """Context-aware welcome screen - shows loaded race if available, otherwise latest race"""
+    
+    # Check if user has loaded a specific session
+    if 'session' in st.session_state:
+        render_loaded_race_analysis()
+    else:
+        render_latest_race_analysis()
+
+def render_loaded_race_analysis():
+    """Render analysis for the currently loaded race"""
+    session = st.session_state.session
+    event_info = st.session_state.get('event_info', 'Unknown Race')
+    year = st.session_state.get('year', 'Unknown')
+    event = st.session_state.get('event', 'Unknown')
+    session_type = st.session_state.get('session_type', 'Unknown')
+    
+    # Header with currently loaded race
+    st.markdown("# 🏎️ Currently Loaded Race Analysis")
+    st.markdown(f"*Analyzing: {event_info}*")
+    
+    # Get stats for the loaded session
+    stats = get_session_stats(session)
+    
+    # Prominent header for loaded race
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        # Create a more prominent title
+        race_title = f"🏁 **{event} {year}**"
+        if year >= 2025:
+            race_title += " *(LIVE SEASON)*"
+        st.markdown(f"## {race_title}")
+        
+        # Session type indicator
+        session_names = {
+            'R': 'Race Session',
+            'Q': 'Qualifying Session', 
+            'S': 'Sprint Session',
+            'FP1': 'Free Practice 1',
+            'FP2': 'Free Practice 2', 
+            'FP3': 'Free Practice 3'
+        }
+        session_name = session_names.get(session_type, f"{session_type} Session")
+        
+        if session_type == 'R':
+            st.success(f"✅ {session_name} - Full Race Analysis")
+        elif session_type == 'Q':
+            st.info(f"🏁 {session_name} - Qualifying Analysis")
+        else:
+            st.info(f"🏁 {session_name}")
+    
+    with col2:
+        st.metric("📅 Date", stats.get('session_date', 'Unknown'))
+    with col3:
+        # Clear current session button
+        if st.button("🔄 Back to Latest", help="Return to latest race overview"):
+            # Clear the loaded session
+            for key in ['session', 'event_info', 'year', 'event', 'session_type']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+    
+    # Enhanced stats with better layout
+    st.markdown("### 📊 Session Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🏆 Fastest Driver", stats.get('fastest_lap_driver', 'N/A'))
+    with col2:
+        st.metric("⚡ Best Time", stats.get('fastest_lap_time', 'N/A'))
+    with col3:
+        st.metric("👥 Drivers", stats.get('total_drivers', 0))
+    with col4:
+        st.metric("🔄 Total Laps", stats.get('total_laps', 0))
+    
+    # Track info if available
+    if stats.get('track_name') and stats.get('track_name') != 'Unknown':
+        st.info(f"🏁 **Track**: {stats.get('track_name')}")
+    
+    # Auto-display race analysis based on session type
+    if session_type == 'R':
+        st.markdown("### 🏁 Race Analysis")
+        
+        try:
+            # Get race positions and show lap times for top performers
+            if hasattr(session, 'laps') and not session.laps.empty:
+                # Try to get final positions
+                try:
+                    final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
+                    if not final_positions.empty:
+                        top_drivers = final_positions.sort_values().head(5).index.tolist()
+                    else:
+                        # Fallback to fastest lap times
+                        fastest_drivers = []
+                        for driver in session.laps['Driver'].unique()[:5]:
+                            try:
+                                fastest_lap = session.laps.pick_driver(driver).pick_fastest()
+                                fastest_drivers.append((driver, fastest_lap['LapTime'].total_seconds()))
+                            except:
+                                continue
+                        top_drivers = [driver for driver, _ in sorted(fastest_drivers, key=lambda x: x[1])[:5]]
+                except:
+                    # Ultimate fallback
+                    top_drivers = session.laps['Driver'].unique()[:5].tolist()
+                
+                if top_drivers:
+                    # Show lap times chart
+                    fig = create_lap_times_chart(session, top_drivers)
+                    fig.update_layout(height=450, title=f"Top Performers - {event} {year}")
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Show race results if available
+                    try:
+                        final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
+                        if not final_positions.empty:
+                            podium = final_positions.sort_values().head(3)
+                            st.markdown("### 🏆 Race Results")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                if len(podium) > 0:
+                                    st.success(f"**🥇 WINNER**\n### {podium.index[0]}")
+                            with col2:
+                                if len(podium) > 1:
+                                    st.info(f"**🥈 SECOND**\n### {podium.index[1]}")
+                            with col3:
+                                if len(podium) > 2:
+                                    st.warning(f"**🥉 THIRD**\n### {podium.index[2]}")
+                    except:
+                        pass
+        except:
+            st.info("⏳ Loading race analysis...")
+    
+    elif session_type == 'Q':
+        st.markdown("### 🏁 Qualifying Analysis")
+        
+        try:
+            # Get qualifying results
+            fastest_laps = []
+            for driver in session.laps['Driver'].unique():
+                try:
+                    fastest_lap = session.laps.pick_driver(driver).pick_fastest()
+                    lap_time_seconds = fastest_lap['LapTime'].total_seconds()
+                    minutes = int(lap_time_seconds // 60)
+                    seconds = lap_time_seconds % 60
+                    formatted_time = f"{minutes}:{seconds:06.3f}"
+                    
+                    fastest_laps.append({
+                        'Driver': driver,
+                        'Time': formatted_time,
+                        'Seconds': lap_time_seconds
+                    })
+                except:
+                    continue
+            
+            if fastest_laps:
+                df = pd.DataFrame(fastest_laps)
+                df = df.sort_values('Seconds').head(10)
+                df['Position'] = range(1, len(df) + 1)
+                
+                # Show top 3
+                st.markdown("### 🏆 Qualifying Results")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if len(df) > 0:
+                        st.success(f"**🥇 POLE POSITION**\n### {df.iloc[0]['Driver']}\n**{df.iloc[0]['Time']}**")
+                with col2:
+                    if len(df) > 1:
+                        st.info(f"**🥈 FRONT ROW**\n### {df.iloc[1]['Driver']}\n**{df.iloc[1]['Time']}**")
+                with col3:
+                    if len(df) > 2:
+                        st.warning(f"**🥉 THIRD**\n### {df.iloc[2]['Driver']}\n**{df.iloc[2]['Time']}**")
+                
+                # Full results table
+                st.markdown("### 📋 Complete Qualifying Results")
+                display_df = df[['Position', 'Driver', 'Time']].reset_index(drop=True)
+                st.dataframe(display_df, use_container_width=True, height=350)
+        except:
+            st.info("⏳ Loading qualifying analysis...")
+    
+    else:
+        # For practice sessions and other session types
+        st.markdown(f"### 📊 {session_names.get(session_type, 'Session')} Analysis")
+        
+        try:
+            # Show fastest lap times
+            fastest_laps = []
+            for driver in session.laps['Driver'].unique():
+                try:
+                    fastest_lap = session.laps.pick_driver(driver).pick_fastest()
+                    lap_time_seconds = fastest_lap['LapTime'].total_seconds()
+                    minutes = int(lap_time_seconds // 60)
+                    seconds = lap_time_seconds % 60
+                    formatted_time = f"{minutes}:{seconds:06.3f}"
+                    
+                    fastest_laps.append({
+                        'Driver': driver,
+                        'Time': formatted_time,
+                        'Seconds': lap_time_seconds
+                    })
+                except:
+                    continue
+            
+            if fastest_laps:
+                df = pd.DataFrame(fastest_laps)
+                df = df.sort_values('Seconds').head(5)
+                
+                # Show top 5 in practice
+                st.markdown("### ⚡ Fastest Times")
+                for i, row in df.iterrows():
+                    if i == 0:
+                        st.success(f"**🏆 P{i+1}**: {row['Driver']} - {row['Time']}")
+                    else:
+                        st.info(f"**P{i+1}**: {row['Driver']} - {row['Time']}")
+        except:
+            st.info("⏳ Loading session analysis...")
+    
+    # Analysis tools reminder
+    st.markdown("### 🔬 Available Analysis Tools")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info("📊 **Six Analysis Tabs Available:**")
+        st.markdown("- 📊 Lap Analysis - Detailed lap time tracking")
+        st.markdown("- ⏱️ Sector Times - Sector-by-sector performance")
+        st.markdown("- 📈 Telemetry - Advanced car data analysis")
+    with col2:
+        st.info("🏁 **Race-Specific Analysis:**")
+        st.markdown("- 🏁 Position Tracking - Race position changes")
+        st.markdown("- 🎯 Speed Traces - Track speed analysis")
+        st.markdown("- 📋 Data Export - Download race data")
+
+def render_latest_race_analysis():
+    """Render the default latest race analysis (original behavior)"""
     st.markdown("# 🏎️ Latest F1 Race Analysis")
     st.markdown("*Most recent race data with instant analysis*")
     
@@ -57,7 +287,12 @@ def render_welcome_screen():
             st.session_state.session = session
             st.session_state.event_info = f"{latest_race['event']} {latest_race['session_type']} ({latest_race['year']})"
             st.session_state.year = latest_race['year']
+            st.session_state.event = latest_race['event']
+            st.session_state.session_type = latest_race['session_type']
             st.rerun()
+        
+        # Continue with existing latest race analysis logic...
+        # (The rest of the original latest race analysis code remains the same)
         
         # Auto-display race analysis
         if latest_race['session_type'] == 'R':
