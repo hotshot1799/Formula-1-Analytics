@@ -157,7 +157,7 @@ def render_position_tracking_tab(session):
             st.error(f"Error creating position analysis: {e}")
             st.info("💡 Try a different race session")
 
-def create_position_chart(position_df):
+def create_position_chart(position_df, session):
     """Create position tracking chart with proper driver names"""
     try:
         if position_df is None or position_df.empty:
