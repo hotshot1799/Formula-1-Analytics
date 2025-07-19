@@ -17,16 +17,16 @@ def render_welcome_screen():
         render_latest_race_analysis()
 
 def render_loaded_race_analysis():
-    """Render analysis for the currently loaded race"""
+    """Render analysis for the currently loaded race - ONLY show this race, no latest race info"""
     session = st.session_state.session
     event_info = st.session_state.get('event_info', 'Unknown Race')
     year = st.session_state.get('year', 'Unknown')
     event = st.session_state.get('event', 'Unknown')
     session_type = st.session_state.get('session_type', 'Unknown')
     
-    # Header with currently loaded race
-    st.markdown("# 🏎️ Currently Loaded Race Analysis")
-    st.markdown(f"*Analyzing: {event_info}*")
+    # Header with currently loaded race - CLEAR that this is the loaded race
+    st.markdown("# 🏎️ Race Analysis Dashboard")
+    st.markdown(f"*Currently Analyzing: {event_info}*")
     
     # Get stats for the loaded session
     stats = get_session_stats(session)
@@ -90,7 +90,7 @@ def render_loaded_race_analysis():
         st.markdown("### 🏁 Race Analysis")
         
         try:
-            # Get race positions and show lap times for top performers
+            # Get race positions and show podium (NO LAP TIMES CHART)
             if hasattr(session, 'laps') and not session.laps.empty:
                 # Try to get final positions
                 try:
@@ -112,12 +112,7 @@ def render_loaded_race_analysis():
                     top_drivers = session.laps['Driver'].unique()[:5].tolist()
                 
                 if top_drivers:
-                    # Show lap times chart
-                    fig = create_lap_times_chart(session, top_drivers)
-                    fig.update_layout(height=450, title=f"Top Performers - {event} {year}")
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Show race results if available
+                    # Show race results if available - NO CHART
                     try:
                         final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
                         if not final_positions.empty:
@@ -237,18 +232,19 @@ def render_loaded_race_analysis():
         st.markdown("- 🎯 Speed Traces - Track speed analysis")
         st.markdown("- 📋 Data Export - Download race data")
     
-    # Add championship standings for the loaded race year
+    # Add championship standings for the loaded race year ONLY
     st.markdown("---")
-    if st.button("📊 Show Championship Standings", key="champ_btn"):
-        st.session_state.show_championship = True
-
-    if st.session_state.get('show_championship', False):
-        render_championship_section(year)
+    st.markdown(f"### 🏆 {year} Championship Standings")
+    st.info(f"Championship context for the {year} season")
+    render_championship_section(year)
 
 def render_latest_race_analysis():
-    """Render the default latest race analysis (original behavior)"""
+    """Render the default latest race analysis (ONLY when no specific race is loaded)"""
     st.markdown("# 🏎️ Latest F1 Race Analysis")
     st.markdown("*Most recent race data with instant analysis*")
+    
+    # Show info that user can load specific races
+    st.info("💡 **Load a specific race** using the sidebar to replace this view with detailed analysis")
     
     latest_race = get_latest_race_data()
     
@@ -312,12 +308,7 @@ def render_latest_race_analysis():
                 top_drivers = final_positions.sort_values().head(5).index.tolist()
                 
                 if top_drivers:
-                    # Show lap times chart
-                    fig = create_lap_times_chart(session, top_drivers)
-                    fig.update_layout(height=450, title="Top 5 Drivers - Lap Time Progression")
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Enhanced podium display
+                    # Enhanced podium display - NO LAP TIMES CHART
                     podium = final_positions.sort_values().head(3)
                     st.markdown("### 🏆 Race Podium")
                     
