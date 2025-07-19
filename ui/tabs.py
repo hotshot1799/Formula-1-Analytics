@@ -7,16 +7,19 @@ from ui.tab_pages.sector_analysis import render_sector_analysis_tab
 from ui.tab_pages.telemetry import render_telemetry_tab
 from ui.tab_pages.position_tracking import render_position_tracking_tab
 from ui.tab_pages.speed_traces import render_speed_traces_tab
+from ui.tab_pages.tyre_analysis import render_tyre_analysis_tab
 from ui.tab_pages.data_export import render_data_export_tab
+
 
 def render_analysis_tabs(session):
     """Render all analysis tabs"""
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Lap Analysis", 
         "⏱️ Sector Times", 
         "📈 Telemetry", 
         "🏁 Position Tracking",
-        "🎯 Speed Traces",
+        "🎯 Speed Traces"
+        "🔧 Tyre Analysis",
         "📋 Data Export"
     ])
     
@@ -36,4 +39,7 @@ def render_analysis_tabs(session):
         render_speed_traces_tab(session)
     
     with tab6:
+        render_tyre_analysis_tab(session)
+
+    with tab7:
         render_data_export_tab(session)

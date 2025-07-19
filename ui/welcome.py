@@ -5,7 +5,6 @@ import streamlit as st
 import pandas as pd
 from data_loader import get_latest_race_data, get_session_stats, get_available_years
 from chart_creators import create_lap_times_chart
-from championship import render_championship_section, get_championship_leader  # Import championship functions
 
 def render_welcome_screen():
     """Context-aware welcome screen - shows loaded race if available, otherwise latest race"""
