@@ -239,7 +239,11 @@ def render_loaded_race_analysis():
     
     # Add championship standings for the loaded race year
     st.markdown("---")
-    render_championship_section(year)
+    if st.button("📊 Show Championship Standings", key="champ_btn"):
+        st.session_state.show_championship = True
+
+    if st.session_state.get('show_championship', False):
+        render_championship_section(year)
 
 def render_latest_race_analysis():
     """Render the default latest race analysis (original behavior)"""

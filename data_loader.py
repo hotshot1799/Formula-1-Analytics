@@ -26,7 +26,7 @@ except Exception:
     # Use default Ergast API if custom one fails
     pass
 
-@st.cache_data(ttl=3600, show_spinner=False)  # 1 hour cache for years
+@st.cache_data(ttl=7200, max_entries=3, show_spinner=False, persist="disk")
 def get_available_years():
     """Get available F1 years with data"""
     current_year = datetime.now().year
@@ -49,7 +49,7 @@ def get_available_years():
     
     return available_years
 
-@st.cache_data(ttl=1800, show_spinner=False)  # 30 minutes cache
+@st.cache_data(ttl=3600, max_entries=5, show_spinner=False, persist="disk")
 def get_schedule(year):
     """Get F1 schedule directly from FastF1 API, filtered to past events for current year"""
     try:
@@ -76,7 +76,7 @@ def get_schedule(year):
         st.error(f"Error loading schedule for {year}: {e}")
         return []
 
-@st.cache_data(ttl=1800, show_spinner=False)  # 30 minutes cache
+@st.cache_data(ttl=1800, max_entries=20, show_spinner=False, persist="disk")
 def load_session(year, event, session_type):
     """Load F1 session data with lazy loading approach"""
     try:

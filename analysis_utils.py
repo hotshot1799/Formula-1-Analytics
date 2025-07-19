@@ -5,6 +5,26 @@ Fixed lap time formatting and position tracking
 import pandas as pd
 import streamlit as st
 
+def session_cache(func):
+    """Cache within the current session only"""
+    from functools import wraps
+    
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        cache_key = f"{func.__name__}_{hash(str(args))}"
+        
+        if 'function_cache' not in st.session_state:
+            st.session_state.function_cache = {}
+        
+        if cache_key in st.session_state.function_cache:
+            return st.session_state.function_cache[cache_key]
+        
+        result = func(*args, **kwargs)
+        st.session_state.function_cache[cache_key] = result
+        return result
+    
+    return wrapper
+
 def format_lap_time(lap_time):
     """Convert timedelta or seconds to MM:SS.SSS format"""
     try:
@@ -239,6 +259,7 @@ def get_position_data_safe(session):
         st.error(f"Error extracting position data: {e}")
         return None
 
+@session_cache
 def calculate_position_changes(position_df):
     """Calculate position changes throughout the race using starting grid positions"""
     try:

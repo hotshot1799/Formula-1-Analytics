@@ -311,7 +311,7 @@ def create_speed_trace_chart(session, drivers):
         st.error(f"Error creating speed trace: {e}")
         return None
 
-def create_position_chart(position_df, session):
+def create_position_chart(position_df, session=None):
     """Create position tracking chart with dynamic F1 team colors"""
     try:
         if position_df is None or position_df.empty:
