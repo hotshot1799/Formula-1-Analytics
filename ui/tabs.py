@@ -18,7 +18,7 @@ def render_analysis_tabs(session):
         "⏱️ Sector Times", 
         "📈 Telemetry", 
         "🏁 Position Tracking",
-        "🎯 Speed Traces"
+        "🎯 Speed Traces",
         "🔧 Tyre Analysis",
         "📋 Data Export"
     ])
