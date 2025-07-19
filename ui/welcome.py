@@ -234,9 +234,9 @@ def render_loaded_race_analysis():
     
     # Add championship standings for the loaded race year ONLY
     st.markdown("---")
-    st.markdown(f"### 🏆 {year} Championship Standings")
-    st.info(f"Championship context for the {year} season")
-    render_championship_section(year)
+    #st.markdown(f"### 🏆 {year} Championship Standings")
+    #st.info(f"Championship context for the {year} season")
+    #render_championship_section(year)
 
 def render_latest_race_analysis():
     """Render the default latest race analysis (ONLY when no specific race is loaded)"""
