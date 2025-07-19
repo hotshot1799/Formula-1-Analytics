@@ -1,9 +1,11 @@
 """
-Updated ui/welcome.py - Context-aware welcome screen WITHOUT championship (for performance)
+Updated ui/welcome.py - Context-aware welcome screen with championship standings
 """
 import streamlit as st
 import pandas as pd
 from data_loader import get_latest_race_data, get_session_stats, get_available_years
+from chart_creators import create_lap_times_chart
+from championship import render_championship_section, get_championship_leader  # Import championship functions
 
 def render_welcome_screen():
     """Context-aware welcome screen - shows loaded race if available, otherwise latest race"""
@@ -80,8 +82,8 @@ def render_loaded_race_analysis():
         st.metric("🔄 Total Laps", stats.get('total_laps', 0))
     
     # Track info if available
-    if stats.get('track_name') and stats.get('track_name') != 'Unknown':
-        st.info(f"🏁 **Track**: {stats.get('track_name')}")
+    #if stats.get('track_name') and stats.get('track_name') != 'Unknown':
+        #st.info(f"🏁 **Track**: {stats.get('track_name')}")
     
     # Auto-display race analysis based on session type
     if session_type == 'R':
@@ -229,6 +231,12 @@ def render_loaded_race_analysis():
         st.markdown("- 🏁 Position Tracking - Race position changes")
         st.markdown("- 🎯 Speed Traces - Track speed analysis")
         st.markdown("- 📋 Data Export - Download race data")
+    
+    # Add championship standings for the loaded race year ONLY
+    st.markdown("---")
+    st.markdown(f"### 🏆 {year} Championship Standings")
+    st.info(f"Championship context for the {year} season")
+    render_championship_section(year)
 
 def render_latest_race_analysis():
     """Render the default latest race analysis (ONLY when no specific race is loaded)"""
@@ -287,6 +295,9 @@ def render_latest_race_analysis():
             st.session_state.event = latest_race['event']
             st.session_state.session_type = latest_race['session_type']
             st.rerun()
+        
+        # Continue with existing latest race analysis logic...
+        # (The rest of the original latest race analysis code remains the same)
         
         # Auto-display race analysis
         if latest_race['session_type'] == 'R':
@@ -372,6 +383,16 @@ def render_latest_race_analysis():
             if latest_race['year'] >= 2025:
                 st.success("🏁 **Live 2025 Season** - Real-time F1 data analysis")
             st.info("⚡ **Six analysis tabs** available: Lap times, sectors, telemetry, positions, speed traces, and data export")
+        
+        # Add championship standings
+        st.markdown("---")
+        
+        # Show championship leader in header if available
+        leader_info = get_championship_leader(latest_race['year'])
+        if leader_info:
+            st.markdown(f"### 🏆 {latest_race['year']} Championship Leader: **{leader_info['driver']}** ({leader_info['points']} pts)")
+        
+        render_championship_section(latest_race['year'])
     
     else:
         st.info("⏳ Loading latest F1 race data...")
@@ -399,3 +420,15 @@ def render_latest_race_analysis():
         st.success("🏁 **Live 2025 F1 Season Available** - Use sidebar to explore all races!")
     else:
         st.info("💡 **Explore Historical F1 Data** - Use sidebar to browse past seasons")
+    
+    # Add championship standings for the latest available year
+    if not latest_race:
+        st.markdown("---")
+        current_year = max(available_years) if available_years else 2024
+        
+        # Show championship leader in header if available
+        leader_info = get_championship_leader(current_year)
+        if leader_info:
+            st.markdown(f"### 🏆 {current_year} Championship Leader: **{leader_info['driver']}** ({leader_info['points']} pts)")
+        
+        render_championship_section(current_year)
