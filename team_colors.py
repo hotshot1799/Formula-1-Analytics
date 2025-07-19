@@ -14,11 +14,11 @@ F1_TEAM_BASE_COLORS = {
     'Aston Martin': ['#006F62', '#229971'],              # Greens
     'Alpine': ['#0090FF', '#FF87BC'],                    # Blue/Pink
     'Williams': ['#005AFF', '#4A90E2'],                  # Blues
-    'Haas': ['#B6BABD', '#FF4444'],                      # Gray/Red
+    'Haas': ["#E5E6E7", "#ADADAD"],                      # Gray/Red
     'Alfa Romeo': ['#900000', '#C1272D'],                # Burgundy/Red
-    'Sauber': ['#900000', '#C1272D'],                    # Burgundy/Red
+    'Sauber': ['#00FF87', '#4AFF4A'],                    # Burgundy/Red
     'AlphaTauri': ['#2B4562', '#5A6B7D'],               # Navy/Gray
-    'RB': ['#2B4562', '#5A6B7D'],                       # Navy/Gray (AlphaTauri rebrand)
+    'RB': ["#5B8DB6", "#4C5F74"],                       # Navy/Gray (AlphaTauri rebrand)
     'Kick Sauber': ['#00FF87', '#4AFF4A'],              # Green variants
 }
 
