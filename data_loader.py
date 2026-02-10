@@ -5,19 +5,13 @@ Lazy loading approach - checks data availability only when needed
 import streamlit as st
 import fastf1
 import pandas as pd
-import tempfile
 import warnings
 from datetime import datetime, timezone
 
-# Suppress warnings and configure cache
-warnings.filterwarnings('ignore')
+import cache_config  # noqa: F401  — initializes FastF1 cache once
 
-# Try to set up FastF1 cache
-try:
-    cache_dir = tempfile.mkdtemp()
-    fastf1.Cache.enable_cache(cache_dir)
-except Exception as e:
-    st.warning(f"Cache setup warning: {e}")
+# Suppress warnings
+warnings.filterwarnings('ignore')
 
 # Try alternative Ergast API - fallback to default if fails
 try:
