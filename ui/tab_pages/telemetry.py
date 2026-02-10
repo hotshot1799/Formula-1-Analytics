@@ -29,7 +29,7 @@ def render_telemetry_tab(session):
             
             # Try other sessions from the same GP
             session_types_to_try = ['Q', 'FP3', 'FP2', 'FP1'] if st.session_state.session_type == 'R' else ['R', 'Q', 'FP3', 'FP2', 'FP1']
-            session_types_to_try = [st for st in session_types_to_try if st != st.session_state.session_type]  # Skip current
+            session_types_to_try = [s for s in session_types_to_try if s != st.session_state.session_type]  # Skip current
             
             for alt_type in session_types_to_try:
                 st.info(f"Checking {alt_type} session for this GP...")
