@@ -85,7 +85,7 @@ def render_speed_traces_tab(session):
                 else:
                     st.info("🏁 **General**: Compare how drivers handle the fastest and slowest sections of the track")
                     
-            except:
+            except Exception:
                 pass
         
         else:

@@ -5,6 +5,7 @@ Lazy loading approach - checks data availability only when needed
 import streamlit as st
 import fastf1
 import pandas as pd
+import logging
 import warnings
 from datetime import datetime, timezone
 
@@ -16,11 +17,10 @@ warnings.filterwarnings('ignore')
 # Try alternative Ergast API - fallback to default if fails
 try:
     fastf1.ergast.interface.BASE_URL = "https://api.jolpi.ca/ergast/f1"
-except Exception:
-    # Use default Ergast API if custom one fails
-    pass
+except Exception as e:
+    logging.warning(f"Could not set custom Ergast URL, using default: {e}")
 
-@st.cache_data(ttl=7200, max_entries=3, show_spinner=False, persist="disk")
+@st.cache_data(ttl=7200, max_entries=3, show_spinner=False)
 def get_available_years():
     """Get available F1 years with data"""
     current_year = datetime.now().year
@@ -34,7 +34,7 @@ def get_available_years():
             schedule = fastf1.get_event_schedule(year)
             if not schedule.empty:
                 available_years.append(year)
-        except:
+        except Exception:
             continue
     
     # Fallback if nothing works
@@ -43,7 +43,7 @@ def get_available_years():
     
     return available_years
 
-@st.cache_data(ttl=3600, max_entries=5, show_spinner=False, persist="disk")
+@st.cache_data(ttl=3600, max_entries=5, show_spinner=False)
 def get_schedule(year):
     """Get F1 schedule directly from FastF1 API, filtered to past events for current year"""
     try:
@@ -70,7 +70,7 @@ def get_schedule(year):
         st.error(f"Error loading schedule for {year}: {e}")
         return []
 
-@st.cache_data(ttl=1800, max_entries=20, show_spinner=False, persist="disk")
+@st.cache_data(ttl=1800, max_entries=20, show_spinner=False)
 def load_session(year, event, session_type):
     """Load F1 session data with lazy loading approach"""
     try:
@@ -136,7 +136,7 @@ def get_session_stats(session):
                 stats['fastest_lap_time'] = 'N/A'
             
             stats['fastest_lap_driver'] = fastest_lap['Driver']
-        except:
+        except Exception:
             stats['fastest_lap_time'] = 'N/A'
             stats['fastest_lap_driver'] = 'N/A'
         
@@ -145,7 +145,7 @@ def get_session_stats(session):
             try:
                 max_speed = session.laps['SpeedFL'].max()
                 stats['max_speed'] = f"{max_speed:.1f} km/h" if pd.notna(max_speed) else "N/A"
-            except:
+            except Exception:
                 stats['max_speed'] = "N/A"
         
         # Average lap time - FIXED FORMAT
@@ -158,7 +158,7 @@ def get_session_stats(session):
                 stats['average_lap_time'] = f"{avg_minutes}:{avg_seconds:06.3f}"
             else:
                 stats['average_lap_time'] = "N/A"
-        except:
+        except Exception:
             stats['average_lap_time'] = "N/A"
         
         # Session date
@@ -167,7 +167,7 @@ def get_session_stats(session):
                 stats['session_date'] = session.date.strftime("%Y-%m-%d")
             else:
                 stats['session_date'] = "Unknown"
-        except:
+        except Exception:
             stats['session_date'] = "Unknown"
         
         return stats
@@ -239,7 +239,7 @@ def get_latest_race_data():
                             'session': session,
                             'status': 'race_complete'
                         }
-                except:
+                except Exception:
                     pass
                 
                 # Try qualifying if no race data
@@ -253,7 +253,7 @@ def get_latest_race_data():
                             'session': session,
                             'status': 'qualifying_complete'
                         }
-                except:
+                except Exception:
                     pass
         
         return None
@@ -301,7 +301,7 @@ def get_recent_race_highlights():
                                 'podium': list(podium.index[:3]),
                                 'session_date': session.date.strftime("%Y-%m-%d") if hasattr(session, 'date') and session.date else "Unknown"
                             })
-                        except:
+                        except Exception:
                             # Fallback for incomplete race data
                             highlights.append({
                                 'year': year,
@@ -312,7 +312,7 @@ def get_recent_race_highlights():
                                 'podium': [fastest_lap['Driver']],
                                 'session_date': session.date.strftime("%Y-%m-%d") if hasattr(session, 'date') and session.date else "Unknown"
                             })
-                except:
+                except Exception:
                     continue
         
         return highlights

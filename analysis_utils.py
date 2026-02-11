@@ -44,7 +44,7 @@ def format_lap_time(lap_time):
         minutes = int(total_seconds // 60)
         seconds = total_seconds % 60
         return f"{minutes}:{seconds:06.3f}"
-    except:
+    except Exception:
         return "N/A"
 
 def calculate_lap_statistics(session, selected_drivers):
@@ -91,7 +91,7 @@ def get_fastest_sector_times(df):
         fastest_s3 = df.loc[df['Sector3'].idxmin()]
         
         return fastest_s1, fastest_s2, fastest_s3
-    except:
+    except Exception:
         return None, None, None
 
 def get_telemetry_insights(session, driver1, driver2):
@@ -150,7 +150,7 @@ def format_session_info(stats):
             info_text = f"**📍 {stats.get('track_name')}** | **⚡ Max Speed: {stats.get('max_speed')}**"
         elif stats.get('track_name'):
             info_text = f"**📍 {stats.get('track_name')}**"
-    except:
+    except Exception:
         pass
     
     return info_text
@@ -194,7 +194,7 @@ def get_position_data_safe(session):
                     # Also map abbreviation to itself
                     if pd.notna(row.get('Abbreviation')):
                         driver_mapping[row['Abbreviation']] = row['Abbreviation']
-            except:
+            except Exception:
                 pass
         
         # If no results mapping, try to extract from session.laps
@@ -209,20 +209,12 @@ def get_position_data_safe(session):
                             driver_mapping[driver_num] = row['Driver']
                             # Also map driver code to itself
                             driver_mapping[row['Driver']] = row['Driver']
-            except:
+            except Exception:
                 pass
         
-        # Fallback: use common F1 driver number to code mapping
+        # Fallback: warn that driver mapping is unavailable
         if not driver_mapping:
-            common_driver_numbers = {
-                '1': 'VER', '11': 'PER', '44': 'HAM', '63': 'RUS',
-                '16': 'LEC', '55': 'SAI', '4': 'NOR', '81': 'PIA',
-                '14': 'ALO', '18': 'STR', '31': 'OCO', '10': 'GAS',
-                '22': 'TSU', '3': 'RIC', '23': 'ALB', '2': 'SAR',
-                '20': 'MAG', '27': 'HUL', '77': 'BOT', '24': 'ZHO',
-                '40': 'LAW', '43': 'COL', '50': 'BEA'
-            }
-            driver_mapping.update(common_driver_numbers)
+            st.warning("Driver mapping unavailable — some drivers may show as numbers")
         
         # Group by lap number and get position for each driver
         for lap_num in session.laps['LapNumber'].unique():
@@ -289,37 +281,12 @@ def calculate_position_changes(position_df):
                         
                         if pd.notna(row.get('FullName')):
                             driver_full_name_mapping[driver_code] = row['FullName']
-            except:
+            except Exception:
                 pass
         
-        # Enhanced fallback mapping with full names
+        # Fallback: warn that driver name mapping is unavailable
         if not driver_name_mapping:
-            driver_mapping_complete = {
-                '1': 'VER', '11': 'PER', '44': 'HAM', '63': 'RUS',
-                '16': 'LEC', '55': 'SAI', '4': 'NOR', '81': 'PIA',
-                '14': 'ALO', '18': 'STR', '31': 'OCO', '10': 'GAS',
-                '22': 'TSU', '3': 'RIC', '23': 'ALB', '2': 'SAR',
-                '20': 'MAG', '27': 'HUL', '77': 'BOT', '24': 'ZHO',
-                '40': 'LAW', '43': 'COL', '50': 'BEA'
-            }
-            
-            full_names = {
-                'VER': 'Max Verstappen', 'PER': 'Sergio Perez', 'HAM': 'Lewis Hamilton',
-                'RUS': 'George Russell', 'LEC': 'Charles Leclerc', 'SAI': 'Carlos Sainz',
-                'NOR': 'Lando Norris', 'PIA': 'Oscar Piastri', 'ALO': 'Fernando Alonso',
-                'STR': 'Lance Stroll', 'OCO': 'Esteban Ocon', 'GAS': 'Pierre Gasly',
-                'TSU': 'Yuki Tsunoda', 'RIC': 'Daniel Ricciardo', 'ALB': 'Alexander Albon',
-                'SAR': 'Logan Sargeant', 'MAG': 'Kevin Magnussen', 'HUL': 'Nico Hulkenberg',
-                'BOT': 'Valtteri Bottas', 'ZHO': 'Guanyu Zhou', 'LAW': 'Liam Lawson',
-                'COL': 'Franco Colapinto', 'BEA': 'Ollie Bearman'
-            }
-            
-            driver_name_mapping.update(driver_mapping_complete)
-            driver_full_name_mapping.update(full_names)
-            
-            # Also map codes to themselves
-            for code in full_names.keys():
-                driver_name_mapping[code] = code
+            st.warning("Driver name mapping unavailable — some drivers may show as numbers")
         
         # PRIORITY: Use starting grid positions from session.results
         start_positions = None
@@ -343,7 +310,7 @@ def calculate_position_changes(position_df):
                             try:
                                 grid_pos = int(row['GridPosition'])
                                 grid_positions[driver_code] = grid_pos
-                            except:
+                            except Exception:
                                 pass
                         
                         # Final race position
@@ -351,7 +318,7 @@ def calculate_position_changes(position_df):
                             try:
                                 final_pos = int(row['Position'])
                                 finish_positions[driver_code] = final_pos
-                            except:
+                            except Exception:
                                 pass
                 
                 # Convert to pandas Series for consistency

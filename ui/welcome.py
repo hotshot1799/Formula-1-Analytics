@@ -86,50 +86,25 @@ def render_loaded_race_analysis():
     # Auto-display race analysis based on session type
     if session_type == 'R':
         st.markdown("### 🏁 Race Analysis")
-        
+
         try:
-            # Get race positions and show podium (NO LAP TIMES CHART)
             if hasattr(session, 'laps') and not session.laps.empty:
-                # Try to get final positions
-                try:
-                    final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
-                    if not final_positions.empty:
-                        top_drivers = final_positions.sort_values().head(5).index.tolist()
-                    else:
-                        # Fallback to fastest lap times
-                        fastest_drivers = []
-                        for driver in session.laps['Driver'].unique()[:5]:
-                            try:
-                                fastest_lap = session.laps.pick_driver(driver).pick_fastest()
-                                fastest_drivers.append((driver, fastest_lap['LapTime'].total_seconds()))
-                            except:
-                                continue
-                        top_drivers = [driver for driver, _ in sorted(fastest_drivers, key=lambda x: x[1])[:5]]
-                except:
-                    # Ultimate fallback
-                    top_drivers = session.laps['Driver'].unique()[:5].tolist()
-                
-                if top_drivers:
-                    # Show race results if available - NO CHART
-                    try:
-                        final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
-                        if not final_positions.empty:
-                            podium = final_positions.sort_values().head(3)
-                            st.markdown("### 🏆 Race Results")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                if len(podium) > 0:
-                                    st.success(f"**🥇 WINNER**\n### {podium.index[0]}")
-                            with col2:
-                                if len(podium) > 1:
-                                    st.info(f"**🥈 SECOND**\n### {podium.index[1]}")
-                            with col3:
-                                if len(podium) > 2:
-                                    st.warning(f"**🥉 THIRD**\n### {podium.index[2]}")
-                    except:
-                        pass
-        except:
+                final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
+                if not final_positions.empty:
+                    podium = final_positions.sort_values().head(3)
+                    st.markdown("### 🏆 Race Results")
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if len(podium) > 0:
+                            st.success(f"**🥇 WINNER**\n### {podium.index[0]}")
+                    with col2:
+                        if len(podium) > 1:
+                            st.info(f"**🥈 SECOND**\n### {podium.index[1]}")
+                    with col3:
+                        if len(podium) > 2:
+                            st.warning(f"**🥉 THIRD**\n### {podium.index[2]}")
+        except Exception:
             st.info("⏳ Loading race analysis...")
     
     elif session_type == 'Q':
@@ -151,7 +126,7 @@ def render_loaded_race_analysis():
                         'Time': formatted_time,
                         'Seconds': lap_time_seconds
                     })
-                except:
+                except Exception:
                     continue
             
             if fastest_laps:
@@ -176,7 +151,7 @@ def render_loaded_race_analysis():
                 st.markdown("### 📋 Complete Qualifying Results")
                 display_df = df[['Position', 'Driver', 'Time']].reset_index(drop=True)
                 st.dataframe(display_df, use_container_width=True, height=350)
-        except:
+        except Exception:
             st.info("⏳ Loading qualifying analysis...")
     
     else:
@@ -199,7 +174,7 @@ def render_loaded_race_analysis():
                         'Time': formatted_time,
                         'Seconds': lap_time_seconds
                     })
-                except:
+                except Exception:
                     continue
             
             if fastest_laps:
@@ -213,7 +188,7 @@ def render_loaded_race_analysis():
                         st.success(f"**🏆 P{i+1}**: {row['Driver']} - {row['Time']}")
                     else:
                         st.info(f"**P{i+1}**: {row['Driver']} - {row['Time']}")
-        except:
+        except Exception:
             st.info("⏳ Loading session analysis...")
     
     # Analysis tools reminder
@@ -313,7 +288,7 @@ def render_latest_race_analysis():
                         if len(podium) > 2:
                             st.warning(f"**🥉 THIRD**\n### {podium.index[2]}")
                 
-            except:
+            except Exception:
                 st.info("⏳ Loading race analysis...")
         
         elif latest_race['session_type'] == 'Q':
@@ -334,7 +309,7 @@ def render_latest_race_analysis():
                             'Time': formatted_time,
                             'Seconds': lap_time_seconds
                         })
-                    except:
+                    except Exception:
                         continue
                 
                 if fastest_laps:
@@ -360,7 +335,7 @@ def render_latest_race_analysis():
                     display_df = df[['Position', 'Driver', 'Time']].reset_index(drop=True)
                     st.dataframe(display_df, use_container_width=True, height=350)
                 
-            except:
+            except Exception:
                 st.info("⏳ Loading qualifying analysis...")
         
         # Additional insights

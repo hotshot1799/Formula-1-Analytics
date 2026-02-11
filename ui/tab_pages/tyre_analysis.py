@@ -151,7 +151,7 @@ def format_lap_time_display(seconds):
         minutes = int(seconds // 60)
         seconds_remainder = seconds % 60
         return f"{minutes}:{seconds_remainder:06.3f}"
-    except:
+    except Exception:
         return "N/A"
 
 def render_tyre_compound_overview(tyre_data):

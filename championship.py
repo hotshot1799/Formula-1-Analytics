@@ -6,90 +6,89 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from team_colors import get_driver_color, initialize_session_colors
+import logging
 import fastf1
 
 @st.cache_data(ttl=3600, show_spinner=False)  # Cache for 1 hour
 def get_current_championship_standings(year):
-    """Get current driver championship standings for the year"""
+    """Get current driver championship standings for the year.
+
+    Strategy: load only the most recent race and read cumulative Points
+    from session.results. Falls back to loading up to 3 races if the
+    most recent one lacks a Points column.
+    """
     try:
         # Get the schedule for the year
         schedule = fastf1.get_event_schedule(year)
         if schedule.empty:
             return None
-        
-        # Get all events that have happened so far
-        standings_data = []
-        
-        # Try to get standings from multiple recent races
+
         events = schedule['EventName'].tolist()
-        
+
         # For current year, only use past events
-        if year == 2025:
-            from datetime import datetime, timezone
-            now_utc = datetime.now(timezone.utc)
-            schedule['Session5DateUtc'] = pd.to_datetime(schedule['Session5DateUtc'], utc=True)
-            past_events = schedule[schedule['Session5DateUtc'] <= now_utc]['EventName'].tolist()
-            events = past_events
-        
-        # Track points across all races
+        from datetime import datetime, timezone
+        now_utc = datetime.now(timezone.utc)
+        schedule['Session5DateUtc'] = pd.to_datetime(schedule['Session5DateUtc'], utc=True)
+        past_schedule = schedule[schedule['Session5DateUtc'] <= now_utc]
+        if not past_schedule.empty:
+            events = past_schedule.sort_values('Session5DateUtc', ascending=False)['EventName'].tolist()
+
+        if not events:
+            return None
+
         driver_points = {}
         driver_full_names = {}
-        
-        # Process recent events to build standings
-        for event in reversed(events[-10:]):  # Last 10 events to build standings
+
+        # Fast path: load most recent race, read cumulative Points from results
+        for event in events[:3]:  # Try up to 3 most recent events
             try:
-                session = fastf1.get_session(year, event, 'R')  # Race session
+                session = fastf1.get_session(year, event, 'R')
                 session.load()
-                
+
                 if hasattr(session, 'results') and not session.results.empty:
-                    for _, row in session.results.iterrows():
-                        if pd.notna(row.get('Abbreviation')) and pd.notna(row.get('Points')):
-                            driver = row['Abbreviation']
-                            points = float(row['Points'])
-                            
-                            # Accumulate points
-                            if driver not in driver_points:
-                                driver_points[driver] = 0
-                            driver_points[driver] += points
-                            
-                            # Store full name
-                            if pd.notna(row.get('FullName')):
-                                driver_full_names[driver] = row['FullName']
-                            
-            except:
+                    results = session.results
+                    if 'Points' in results.columns:
+                        for _, row in results.iterrows():
+                            if pd.notna(row.get('Abbreviation')) and pd.notna(row.get('Points')):
+                                driver = row['Abbreviation']
+                                driver_points[driver] = float(row['Points'])
+                                if pd.notna(row.get('FullName')):
+                                    driver_full_names[driver] = row['FullName']
+
+                        if driver_points:
+                            break  # Got cumulative standings from one race
+
+            except Exception:
                 continue
-        
-        # If no points data from results, try alternative method
+
+        # Slow fallback: if no cumulative Points column, sum race-by-race (cap at 3)
         if not driver_points:
-            # Use position-based points system as fallback
+            st.warning("Using slow fallback for championship standings (loading multiple races)")
             points_system = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
-            
-            for event in reversed(events[-5:]):  # Check recent races
+
+            for event in events[:3]:
                 try:
                     session = fastf1.get_session(year, event, 'R')
                     session.load()
-                    
+
                     if hasattr(session, 'laps') and not session.laps.empty:
-                        # Get final positions
                         final_positions = session.laps.groupby('Driver')['Position'].last().dropna()
-                        
+
                         for driver, position in final_positions.items():
                             try:
                                 pos = int(position)
                                 points = points_system.get(pos, 0)
-                                
                                 if driver not in driver_points:
                                     driver_points[driver] = 0
                                 driver_points[driver] += points
-                                
-                            except:
+                            except Exception:
                                 continue
-                except:
+                except Exception:
                     continue
-        
+
         if not driver_points:
             return None
-        
+
         # Create standings dataframe
         standings = []
         for driver, points in driver_points.items():
@@ -99,13 +98,13 @@ def get_current_championship_standings(year):
                 'Full Name': full_name,
                 'Points': points
             })
-        
+
         df = pd.DataFrame(standings)
         df = df.sort_values('Points', ascending=False).reset_index(drop=True)
         df['Position'] = range(1, len(df) + 1)
-        
+
         return df
-        
+
     except Exception as e:
         st.error(f"Error getting championship standings: {e}")
         return None
@@ -129,7 +128,7 @@ def create_championship_chart(standings_df, year):
                 # Try to get team color, fallback to generic if not available
                 color = get_driver_color(driver) if 'driver_colors' in st.session_state else px.colors.qualitative.Set3[len(colors) % len(px.colors.qualitative.Set3)]
                 colors.append(color)
-            except:
+            except Exception:
                 colors.append(px.colors.qualitative.Set3[len(colors) % len(px.colors.qualitative.Set3)])
         
         # Create horizontal bar chart
@@ -271,5 +270,5 @@ def get_championship_leader(year):
                 'points': leader['Points']
             }
         return None
-    except:
+    except Exception:
         return None

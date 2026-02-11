@@ -24,7 +24,7 @@ def render_data_export_tab(session):
         with col3:
             data_points = total_laps * total_drivers
             st.metric("📈 Data Points", data_points)
-    except:
+    except Exception:
         st.info("Loading session data...")
     
     # Data preview and export
@@ -172,5 +172,5 @@ def render_data_export_tab(session):
                 available_columns = list(session.laps.columns)
                 st.markdown("**Available columns in raw data:**")
                 st.write(available_columns)
-            except:
+            except Exception:
                 pass
