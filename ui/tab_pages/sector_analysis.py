@@ -33,7 +33,7 @@ def render_sector_analysis_tab(session):
             try:
                 best_overall = df.loc[df['Total'].idxmin(), 'Driver']
                 st.success(f"🏁 **Overall Fastest**: {best_overall} had the best combined sector times")
-            except:
+            except Exception:
                 pass
         
         st.subheader("📊 Detailed Sector Times")

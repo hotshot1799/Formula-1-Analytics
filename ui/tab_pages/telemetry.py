@@ -21,7 +21,7 @@ def render_telemetry_tab(session):
             tel_sample = sample_lap.get_telemetry()
             if not tel_sample.empty and 'Speed' in tel_sample.columns:
                 telemetry_available = True
-        except:
+        except Exception:
             pass
 
         if not telemetry_available:
@@ -45,7 +45,7 @@ def render_telemetry_tab(session):
                                 st.session_state.event_info = f"{st.session_state.event} {alt_type} ({st.session_state.year}) - Telemetry Fallback"
                                 st.success(f"✅ Telemetry loaded from {alt_type} session of this GP!")
                                 st.rerun()
-                        except:
+                        except Exception:
                             continue
             
             # If none found
@@ -99,7 +99,7 @@ def render_telemetry_tab(session):
                             if abs(throttle_diff) > 2:
                                 aggressive_driver = driver1 if throttle_diff > 0 else driver2
                                 st.info(f"🔥 **Driving Style**: {aggressive_driver} used {abs(throttle_diff):.1f}% more throttle on average")
-                    except:
+                    except Exception:
                         pass
                 
                 # Telemetry tips

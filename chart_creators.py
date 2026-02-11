@@ -27,7 +27,7 @@ def format_lap_time_for_display(lap_time):
         minutes = int(total_seconds // 60)
         seconds = total_seconds % 60
         return f"{minutes}:{seconds:06.3f}"
-    except:
+    except Exception:
         return "N/A"
 
 def create_lap_times_chart(session, selected_drivers):
