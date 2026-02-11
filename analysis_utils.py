@@ -11,7 +11,7 @@ def session_cache(func):
     
     @wraps(func)
     def wrapper(*args, **kwargs):
-        cache_key = f"{func.__name__}_{'_'.join(str(id(a)) for a in args)}"
+        cache_key = f"{func.__name__}_{st.session_state.get('year')}_{st.session_state.get('event')}_{st.session_state.get('session_type')}"
         
         if 'function_cache' not in st.session_state:
             st.session_state.function_cache = {}

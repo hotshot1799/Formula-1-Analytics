@@ -58,6 +58,7 @@ def render_sidebar():
         
         if session:
             st.session_state.session = session
+            st.session_state.function_cache = {}
             st.session_state.event_info = f"{event} {session_type} ({year})"
             st.session_state.year = year
             st.session_state.event = event
