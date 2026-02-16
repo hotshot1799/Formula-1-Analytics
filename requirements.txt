@@ -8,3 +8,7 @@ python-dateutil
 requests
 matplotlib
 seaborn
+scikit-learn
+xgboost
+scipy
+joblib
