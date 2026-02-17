@@ -199,7 +199,8 @@ class FeatureStore:
         self,
         features: pd.DataFrame,
         target_col: str = 'Position',
-        test_size: float = None
+        test_size: float = None,
+        metadata_cols: List[str] = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         """
         Prepare features for model training
@@ -208,6 +209,11 @@ class FeatureStore:
             features: Feature DataFrame
             target_col: Target column name
             test_size: Test split ratio
+            metadata_cols: Extra identifier columns to pass through alongside
+                the numeric features (e.g. ['Abbreviation', 'Year',
+                'EventName', 'RoundNumber']).  Models such as ELO need these
+                to group races and look up drivers; they are excluded from the
+                default feature set but preserved when explicitly requested.
 
         Returns:
             Tuple of (X_train, X_test, y_train, y_test)
@@ -215,13 +221,24 @@ class FeatureStore:
         if test_size is None:
             test_size = MLConfig.TEST_SPLIT_RATIO
 
+        if metadata_cols is None:
+            metadata_cols = []
+
+        # Columns that are always excluded (never useful as model inputs)
+        always_exclude = {
+            target_col, 'TeamName', 'FullName', 'Status',
+            'Country', 'DriverNumber',
+        }
+        # Default non-feature identifiers — excluded unless the caller
+        # explicitly requests them via metadata_cols
+        default_exclude = {
+            'Year', 'EventName', 'RoundNumber', 'Abbreviation',
+        }
+        exclude_cols = always_exclude | (default_exclude - set(metadata_cols))
+
         feature_cols = [
             col for col in features.columns
-            if col not in [
-                target_col, 'Year', 'EventName', 'RoundNumber',
-                'Abbreviation', 'TeamName', 'FullName', 'Status',
-                'Country', 'DriverNumber'
-            ]
+            if col not in exclude_cols
         ]
 
         features_clean = features.dropna(subset=feature_cols + [target_col])
@@ -236,8 +253,12 @@ class FeatureStore:
         y_train = y.iloc[:split_idx]
         y_test = y.iloc[split_idx:]
 
+        numeric_feature_count = len([
+            c for c in feature_cols if c not in metadata_cols
+        ])
         logger.info(f"Training set: {X_train.shape}, Test set: {X_test.shape}")
-        logger.info(f"Feature columns: {len(feature_cols)}")
+        logger.info(f"Feature columns: {numeric_feature_count} numeric + "
+                    f"{len([c for c in feature_cols if c in metadata_cols])} metadata")
 
         return X_train, X_test, y_train, y_test
 

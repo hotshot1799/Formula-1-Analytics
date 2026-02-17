@@ -159,8 +159,15 @@ class F1MLPipeline:
 
             logger.info(f"Features saved to {filepath}")
 
+            # Pass ELO metadata so the model can group races and find drivers.
+            # Without these columns X_train has no 'Abbreviation', causing
+            # the ELO train loop to see an empty driver list and leave every
+            # rating at the initial 1500.
             self.X_train, self.X_test, self.y_train, self.y_test = (
-                self.feature_store.prepare_training_data(self.features)
+                self.feature_store.prepare_training_data(
+                    self.features,
+                    metadata_cols=['Abbreviation', 'Year', 'EventName', 'RoundNumber'],
+                )
             )
 
             logger.info(f"Training set: {len(self.X_train)} samples")
