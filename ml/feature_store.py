@@ -201,7 +201,7 @@ class FeatureStore:
         target_col: str = 'Position',
         test_size: float = None,
         metadata_cols: List[str] = None
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.DataFrame, pd.DataFrame]:
         """
         Prepare features for model training
 
@@ -216,7 +216,7 @@ class FeatureStore:
                 default feature set but preserved when explicitly requested.
 
         Returns:
-            Tuple of (X_train, X_test, y_train, y_test)
+            Tuple of (X_train, X_test, y_train, y_test, meta_train, meta_test)
         """
         if test_size is None:
             test_size = MLConfig.TEST_SPLIT_RATIO
@@ -260,7 +260,12 @@ class FeatureStore:
         logger.info(f"Feature columns: {numeric_feature_count} numeric + "
                     f"{len([c for c in feature_cols if c in metadata_cols])} metadata")
 
-        return X_train, X_test, y_train, y_test
+        meta_cols = ['Abbreviation', 'EventName', 'Year']
+        available_meta_cols = [c for c in meta_cols if c in features_clean.columns]
+        meta_train = features_clean[available_meta_cols].iloc[:split_idx]
+        meta_test = features_clean[available_meta_cols].iloc[split_idx:]
+
+        return X_train, X_test, y_train, y_test, meta_train, meta_test
 
     def get_feature_importance_data(
         self,
