@@ -52,6 +52,9 @@ class F1MLPipeline:
         self.X_test: Optional[pd.DataFrame] = None
         self.y_train: Optional[pd.Series] = None
         self.y_test: Optional[pd.Series] = None
+        self.meta_train: Optional[pd.DataFrame] = None
+        self.meta_test: Optional[pd.DataFrame] = None
+        self.elo_test: Optional[pd.DataFrame] = None
 
     def transition_to(self, new_state: MLState) -> None:
         """
@@ -163,7 +166,7 @@ class F1MLPipeline:
             # Without these columns X_train has no 'Abbreviation', causing
             # the ELO train loop to see an empty driver list and leave every
             # rating at the initial 1500.
-            self.X_train, self.X_test, self.y_train, self.y_test = (
+            self.X_train, self.X_test, self.y_train, self.y_test, self.meta_train, self.meta_test = (
                 self.feature_store.prepare_training_data(
                     self.features,
                     metadata_cols=['Abbreviation', 'Year', 'EventName', 'RoundNumber'],
@@ -198,7 +201,9 @@ class F1MLPipeline:
                 return False
 
             elo_model = ELOModel()
-            elo_model.train(self.X_train, self.y_train)
+            elo_train = pd.concat([self.X_train, self.meta_train], axis=1)
+            elo_model.train(elo_train, self.y_train)
+            self.elo_test = pd.concat([self.X_test, self.meta_test], axis=1)
 
             self.models['ELO'] = elo_model
 
@@ -238,7 +243,10 @@ class F1MLPipeline:
 
             for model_name, model in self.models.items():
                 logger.info(f"\nEvaluating {model_name}...")
-                y_pred = model.predict(self.X_test)
+                if model_name == 'ELO':
+                    y_pred = model.predict(self.elo_test)
+                else:
+                    y_pred = model.predict(self.X_test)
                 predictions[model_name] = y_pred
 
             comparison = self.evaluator.evaluate_multiple_models(
