@@ -60,22 +60,15 @@ def _validate_engineer(pipeline: F1MLPipeline) -> tuple[bool, str]:
 def _validate_store(pipeline: F1MLPipeline) -> tuple[bool, str]:
     if pipeline.X_train is None:
         return False, "Training data not prepared"
-    missing = [
-        col for col in ("Abbreviation", "Year", "EventName", "RoundNumber")
-        if col not in pipeline.X_train.columns
-    ]
-    if missing:
-        return (
-            False,
-            "ELO metadata missing from X_train — "
-            + ", ".join(f"'{c}'" for c in missing)
-            + " (ELO bug not fixed)",
-        )
+    if pipeline.meta_train is None or pipeline.meta_train.empty:
+        return False, "ELO metadata (meta_train) not populated"
+    if "Abbreviation" not in pipeline.meta_train.columns:
+        return False, "ELO metadata missing 'Abbreviation' column"
     return (
         True,
         f"Train: {len(pipeline.X_train):,} rows, "
         f"Test: {len(pipeline.X_test):,} rows; "
-        "all ELO metadata present",
+        "ELO metadata present in meta_train",
     )
 
 
