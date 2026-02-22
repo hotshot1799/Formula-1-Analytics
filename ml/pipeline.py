@@ -145,11 +145,11 @@ class F1MLPipeline:
 
         self.transition_to(MLState.STORE)
 
-        try:
-            if self.features is None or self.features.empty:
-                logger.error("No features available to store")
-                return False
+        if self.features is None or self.features.empty:
+            logger.error("No features available to store")
+            return False
 
+        try:
             filepath = self.feature_store.save_features(
                 self.features,
                 feature_name,
@@ -159,9 +159,11 @@ class F1MLPipeline:
                     'n_races': len(self.features['EventName'].unique())
                 }
             )
-
             logger.info(f"Features saved to {filepath}")
+        except Exception as e:
+            logger.warning(f"Could not save features to disk (non-fatal): {e}")
 
+        try:
             self.X_train, self.X_test, self.y_train, self.y_test, self.meta_train, self.meta_test = (
                 self.feature_store.prepare_training_data(self.features)
             )
