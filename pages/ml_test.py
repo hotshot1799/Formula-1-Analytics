@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cache_config  # noqa: F401 — initialises FastF1 cache once
 
+import traceback
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -182,7 +184,15 @@ def _run_pipeline(config: dict) -> None:
 
     def _run(label: str, fn, *args) -> bool:
         with st.spinner(f"Running {label}…"):
-            ok = fn(*args)
+            try:
+                ok = fn(*args)
+            except Exception as exc:
+                st.error(
+                    f"**{label} raised an exception:**\n\n"
+                    f"```\n{traceback.format_exc()}\n```"
+                )
+                log.append((label, False))
+                return False
         log.append((label, ok))
         return ok
 
