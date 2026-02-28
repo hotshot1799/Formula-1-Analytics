@@ -20,7 +20,7 @@ class ELOModel(BaseF1Model):
     Updates ratings based on race results
     """
 
-    required_columns = ['Abbreviation', 'Year', 'EventName']
+    required_columns = ['Abbreviation', 'Year', 'EventName', 'RoundNumber']
 
     def __init__(
         self,
@@ -98,16 +98,16 @@ class ELOModel(BaseF1Model):
         Train ELO model on race results
 
         Args:
-            X: Feature DataFrame with race information (must include Abbreviation,
-               Year, and EventName columns)
+            X: Feature DataFrame with race information (must include
+               Abbreviation, Year, EventName, and RoundNumber columns)
             y: Race positions (target)
         """
-        for col in ('Abbreviation', 'Year', 'EventName'):
+        for col in self.required_columns:
             if col not in X.columns:
                 raise ValueError(
                     f"ELO model requires '{col}' column in input data. "
-                    "Pass metadata_cols to prepare_training_data so that "
-                    "identifier columns are preserved."
+                    "Use model.prepare_input(X, meta) to merge identifier "
+                    "columns before calling train()."
                 )
 
         logger.info("Training ELO model...")
@@ -135,7 +135,8 @@ class ELOModel(BaseF1Model):
         Predict race positions based on current ELO ratings
 
         Args:
-            X: Feature DataFrame (must include Abbreviation, Year, EventName)
+            X: Feature DataFrame (must include Abbreviation, Year,
+               EventName, RoundNumber)
 
         Returns:
             Predicted positions
@@ -143,7 +144,7 @@ class ELOModel(BaseF1Model):
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction")
 
-        for col in ('Abbreviation', 'Year', 'EventName'):
+        for col in self.required_columns:
             if col not in X.columns:
                 raise ValueError(
                     f"ELO model requires '{col}' column in input data."

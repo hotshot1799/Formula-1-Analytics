@@ -101,6 +101,37 @@ def _render_track_info(stats: dict) -> None:
         st.info(f"**Track**: {stats.get('track_name')}")
 
 
+def _render_header(
+    event: str,
+    year,
+    stats: dict,
+    *,
+    status_text: str = "",
+    third_col_content=None,
+) -> None:
+    """Shared 3-column header: event title + live badge, date, and a
+    third column that callers can customise (back button, session type,
+    etc.)."""
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        title = f"**{event} {year}**"
+        if isinstance(year, int) and year >= 2025:
+            title += " *(LIVE SEASON)*"
+        st.markdown(f"## {title}")
+        if status_text:
+            # Use success style for race-complete / race sessions,
+            # info for everything else
+            if "Race" in status_text or "Complete" in status_text:
+                st.success(status_text)
+            else:
+                st.info(status_text)
+    with col2:
+        st.metric("Date", stats.get('session_date', 'Unknown'))
+    with col3:
+        if third_col_content is not None:
+            third_col_content()
+
+
 # ── main modes ──────────────────────────────────────────────────────────
 
 
@@ -116,24 +147,20 @@ def _render_loaded_session() -> None:
     st.markdown("# Race Analysis Dashboard")
     st.markdown(f"*Currently Analyzing: {event_info}*")
 
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        title = f"**{event} {year}**"
-        if isinstance(year, int) and year >= 2025:
-            title += " *(LIVE SEASON)*"
-        st.markdown(f"## {title}")
-        session_name = _SESSION_NAMES.get(session_type, f"{session_type} Session")
-        if session_type == 'R':
-            st.success(f"{session_name} - Full Race Analysis")
-        else:
-            st.info(f"{session_name}")
-    with col2:
-        st.metric("Date", stats.get('session_date', 'Unknown'))
-    with col3:
+    session_name = _SESSION_NAMES.get(session_type, f"{session_type} Session")
+    status = (
+        f"{session_name} - Full Race Analysis" if session_type == 'R'
+        else session_name
+    )
+
+    def _back_button():
         if st.button("Back to Latest", help="Return to latest race overview"):
             for key in ['session', 'event_info', 'year', 'event', 'session_type']:
                 st.session_state.pop(key, None)
             st.rerun()
+
+    _render_header(event, year, stats, status_text=status,
+                   third_col_content=_back_button)
 
     st.markdown("### Session Statistics")
     _render_stats_row(stats)
@@ -154,20 +181,17 @@ def _render_no_session() -> None:
         session = latest_race['session']
         stats = get_session_stats(session)
 
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1:
-            title = f"**{latest_race['event']} {latest_race['year']}**"
-            if latest_race['year'] >= 2025:
-                title += " *(LIVE SEASON)*"
-            st.markdown(f"## {title}")
-            if latest_race['status'] == 'race_complete':
-                st.success("Race Complete - Full Analysis Available")
-            else:
-                st.info("Latest Qualifying - Live Data")
-        with col2:
-            st.metric("Date", stats.get('session_date', 'Unknown'))
-        with col3:
+        status = (
+            "Race Complete - Full Analysis Available"
+            if latest_race['status'] == 'race_complete'
+            else "Latest Qualifying - Live Data"
+        )
+
+        def _show_session_type():
             st.metric("Session", latest_race['session_type'])
+
+        _render_header(latest_race['event'], latest_race['year'], stats,
+                       status_text=status, third_col_content=_show_session_type)
 
         st.markdown("### Key Statistics")
         _render_stats_row(stats)

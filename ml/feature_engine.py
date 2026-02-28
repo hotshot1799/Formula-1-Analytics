@@ -129,47 +129,62 @@ class FeatureEngineer:
 
     def create_team_features(self, results_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create team-level features
+        Create team-level rolling features and merge them back.
 
-        Args:
-            results_df: Race results
-
-        Returns:
-            DataFrame with team features
+        Team features are computed per-race (one value per team per round)
+        then merged onto the original dataframe so the row count never
+        changes.
         """
         logger.info("Creating team features...")
 
         results_sorted = results_df.sort_values(['Year', 'RoundNumber'])
 
-        team_features = []
-
-        for team in results_sorted['TeamName'].unique():
-            team_data = results_sorted[results_sorted['TeamName'] == team].copy()
-
-            team_data['Team_AvgPosition_Last3'] = (
-                team_data['Position']
-                .rolling(window=3, min_periods=1)
-                .mean()
+        # Build one row per team per race with aggregated stats
+        team_race = (
+            results_sorted
+            .groupby(['Year', 'RoundNumber', 'TeamName'])
+            .agg(
+                Team_RaceAvgPos=('Position', 'mean'),
+                Team_RacePoints=('Points', 'sum'),
+                Team_RaceFinished=('Status', lambda s: (
+                    s.apply(lambda x: 1 if 'Finished' in str(x) or '+' in str(x) else 0).mean()
+                )),
             )
+            .reset_index()
+            .sort_values(['Year', 'RoundNumber'])
+        )
 
-            team_data['Team_Points_Last3'] = (
-                team_data['Points']
-                .rolling(window=3, min_periods=1)
-                .sum()
+        # Rolling features per team (across races, not across drivers)
+        team_rolling = []
+        for team in team_race['TeamName'].unique():
+            td = team_race[team_race['TeamName'] == team].copy()
+            td['Team_AvgPosition_Last3'] = (
+                td['Team_RaceAvgPos'].rolling(window=3, min_periods=1).mean()
             )
-
-            team_data['Team_FinishRate_Last5'] = (
-                team_data['Status']
-                .apply(lambda x: 1 if 'Finished' in str(x) or '+' in str(x) else 0)
-                .rolling(window=5, min_periods=1)
-                .mean()
+            td['Team_Points_Last3'] = (
+                td['Team_RacePoints'].rolling(window=3, min_periods=1).sum()
             )
+            td['Team_FinishRate_Last5'] = (
+                td['Team_RaceFinished'].rolling(window=5, min_periods=1).mean()
+            )
+            team_rolling.append(td)
 
-            team_features.append(team_data)
+        team_features_df = pd.concat(team_rolling, ignore_index=True)
 
-        result = pd.concat(team_features, ignore_index=True)
+        # Keep only the keys + new feature columns for the merge
+        merge_cols = [
+            'Year', 'RoundNumber', 'TeamName',
+            'Team_AvgPosition_Last3', 'Team_Points_Last3', 'Team_FinishRate_Last5',
+        ]
+        team_features_df = team_features_df[merge_cols]
+
+        result = results_sorted.merge(
+            team_features_df,
+            on=['Year', 'RoundNumber', 'TeamName'],
+            how='left',
+        )
+
         logger.info(f"Created team features for {len(result)} records")
-
         return result
 
     def create_track_history_features(self, results_df: pd.DataFrame) -> pd.DataFrame:
@@ -201,6 +216,15 @@ class FeatureEngineer:
                 positions.expanding(min_periods=1).min().shift(1)
             )
             results_sorted.loc[idx, 'Driver_Track_Races'] = range(len(idx))
+
+        # First visit to a track has no history — fill with midfield defaults
+        # so that downstream dropna() doesn't discard these rows.
+        results_sorted['Driver_Track_AvgPosition'] = (
+            results_sorted['Driver_Track_AvgPosition'].fillna(10.0)
+        )
+        results_sorted['Driver_Track_BestPosition'] = (
+            results_sorted['Driver_Track_BestPosition'].fillna(10.0)
+        )
 
         logger.info(f"Created track history features for {len(results_sorted)} records")
         return results_sorted
