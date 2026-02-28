@@ -164,10 +164,7 @@ class F1MLPipeline:
 
         try:
             self.X_train, self.X_test, self.y_train, self.y_test, self.meta_train, self.meta_test = (
-                self.feature_store.prepare_training_data(
-                    self.features,
-                    metadata_cols=['Abbreviation', 'Year', 'EventName', 'RoundNumber'],
-                )
+                self.feature_store.prepare_training_data(self.features)
             )
 
             logger.info(f"Training set: {len(self.X_train)} samples")
@@ -177,8 +174,10 @@ class F1MLPipeline:
             if self.meta_train is None or self.meta_train.empty:
                 logger.error("meta_train is empty after prepare_training_data")
                 return False
-            if 'Abbreviation' not in self.meta_train.columns:
-                logger.error("meta_train missing 'Abbreviation' column")
+            required_meta = {'Abbreviation', 'Year', 'EventName', 'RoundNumber'}
+            missing = required_meta - set(self.meta_train.columns)
+            if missing:
+                logger.error(f"meta_train missing columns: {missing}")
                 return False
 
             return True
@@ -206,10 +205,10 @@ class F1MLPipeline:
                 return False
 
             elo_model = ELOModel()
-            # X_train already contains identifier columns (Abbreviation,
-            # Year, EventName, RoundNumber) because run_store_state passes
-            # metadata_cols.  No need to concat meta_train separately.
-            elo_model.train(self.X_train, self.y_train)
+            # X_train has only numeric features; use prepare_input to
+            # merge identifier columns from meta_train before training.
+            elo_train = elo_model.prepare_input(self.X_train, self.meta_train)
+            elo_model.train(elo_train, self.y_train)
 
             self.models['ELO'] = elo_model
 

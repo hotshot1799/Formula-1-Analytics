@@ -39,29 +39,35 @@ def render_telemetry_tab(session):
 
 
 def _try_fallback_sessions():
-    """Try loading telemetry from alternate sessions of the same GP."""
+    """Try loading telemetry from alternate sessions of the same GP.
+
+    Checks each candidate silently behind a single spinner and only
+    shows one message at the end — either success (with a rerun) or a
+    single error.
+    """
     current = st.session_state.get('session_type', '')
     candidates = [s for s in ['Q', 'FP3', 'FP2', 'FP1', 'R'] if s != current]
 
-    for alt_type in candidates:
-        with st.spinner(f"Checking {alt_type} session..."):
-            alt_session = load_session(
-                st.session_state.year, st.session_state.event, alt_type
-            )
-            if alt_session:
-                try:
-                    alt_tel = alt_session.laps.pick_fastest().get_telemetry()
-                    if not alt_tel.empty and 'Speed' in alt_tel.columns:
-                        st.session_state.session = alt_session
-                        st.session_state.session_type = alt_type
-                        st.session_state.event_info = (
-                            f"{st.session_state.event} {alt_type} "
-                            f"({st.session_state.year}) - Telemetry Fallback"
-                        )
-                        st.success(f"Telemetry loaded from {alt_type} session!")
-                        st.rerun()
-                except Exception:
+    with st.spinner("Searching other sessions for telemetry data..."):
+        for alt_type in candidates:
+            try:
+                alt_session = load_session(
+                    st.session_state.year, st.session_state.event, alt_type
+                )
+                if not alt_session:
                     continue
+                alt_tel = alt_session.laps.pick_fastest().get_telemetry()
+                if not alt_tel.empty and 'Speed' in alt_tel.columns:
+                    st.session_state.session = alt_session
+                    st.session_state.session_type = alt_type
+                    st.session_state.event_info = (
+                        f"{st.session_state.event} {alt_type} "
+                        f"({st.session_state.year}) - Telemetry Fallback"
+                    )
+                    st.success(f"Telemetry found in {alt_type} session — reloading.")
+                    st.rerun()
+            except Exception:
+                continue
 
     st.error(
         "No telemetry available for any session in this GP. "
