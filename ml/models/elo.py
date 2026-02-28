@@ -20,6 +20,8 @@ class ELOModel(BaseF1Model):
     Updates ratings based on race results
     """
 
+    required_columns = ['Abbreviation', 'Year', 'EventName']
+
     def __init__(
         self,
         k_factor: int = None,
@@ -96,9 +98,18 @@ class ELOModel(BaseF1Model):
         Train ELO model on race results
 
         Args:
-            X: Feature DataFrame with race information
+            X: Feature DataFrame with race information (must include Abbreviation,
+               Year, and EventName columns)
             y: Race positions (target)
         """
+        for col in ('Abbreviation', 'Year', 'EventName'):
+            if col not in X.columns:
+                raise ValueError(
+                    f"ELO model requires '{col}' column in input data. "
+                    "Pass metadata_cols to prepare_training_data so that "
+                    "identifier columns are preserved."
+                )
+
         logger.info("Training ELO model...")
 
         data = X.copy()
@@ -109,7 +120,7 @@ class ELOModel(BaseF1Model):
         for _, race_group in data_sorted.groupby(['Year', 'EventName']):
             race_results = race_group.sort_values('Position')
 
-            drivers = race_results['Abbreviation'].values if 'Abbreviation' in race_results.columns else []
+            drivers = race_results['Abbreviation'].values
 
             for i, driver_a in enumerate(drivers):
                 for driver_b in drivers[i+1:]:
@@ -124,7 +135,7 @@ class ELOModel(BaseF1Model):
         Predict race positions based on current ELO ratings
 
         Args:
-            X: Feature DataFrame
+            X: Feature DataFrame (must include Abbreviation, Year, EventName)
 
         Returns:
             Predicted positions
@@ -132,10 +143,16 @@ class ELOModel(BaseF1Model):
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction")
 
+        for col in ('Abbreviation', 'Year', 'EventName'):
+            if col not in X.columns:
+                raise ValueError(
+                    f"ELO model requires '{col}' column in input data."
+                )
+
         predictions = []
 
         for _, race_group in X.groupby(['Year', 'EventName']):
-            drivers = race_group['Abbreviation'].values if 'Abbreviation' in race_group.columns else []
+            drivers = race_group['Abbreviation'].values
 
             driver_ratings = [(driver, self._get_rating(driver)) for driver in drivers]
 

@@ -127,12 +127,6 @@ def initialize_session_colors(session):
     if 'driver_colors' in st.session_state:
         st.sidebar.success(f"🎨 Team colors assigned for {len(st.session_state.driver_colors)} drivers")
 
-def get_color_by_driver_number(driver_number, session=None):
-    """Get color by driver number (if needed for legacy support)"""
-    # This would need to be mapped through session data
-    # For now, return a generic color
-    return '#808080'
-
 # Helper function to display color legend
 def show_driver_color_legend():
     """Display a color legend in the sidebar"""
