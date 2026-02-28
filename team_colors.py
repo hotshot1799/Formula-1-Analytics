@@ -16,7 +16,7 @@ F1_TEAM_BASE_COLORS = {
     'Williams': ['#005AFF', '#4A90E2'],                  # Blues
     'Haas': ["#E5E6E7", "#ADADAD"],                      # Gray/Red
     'Alfa Romeo': ['#900000', '#C1272D'],                # Burgundy/Red
-    'Sauber': ['#00FF87', '#4AFF4A'],                    # Burgundy/Red
+    'Sauber': ['#00FF87', '#4AFF4A'],                    # Green variants
     'AlphaTauri': ['#2B4562', '#5A6B7D'],               # Navy/Gray
     'RB': ["#5B8DB6", "#4C5F74"],                       # Navy/Gray (AlphaTauri rebrand)
     'Kick Sauber': ['#00FF87', '#4AFF4A'],              # Green variants

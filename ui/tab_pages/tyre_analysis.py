@@ -4,6 +4,7 @@ Tyre compound analysis tab.
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from analysis_utils import format_lap_time
 
 
 def render_tyre_analysis_tab(session):
@@ -69,12 +70,7 @@ def _get_compound_color(compound: str) -> str:
     return _COMPOUND_COLORS.get(compound.upper(), '#808080')
 
 
-def _fmt_lap(seconds) -> str:
-    if pd.isna(seconds) or seconds <= 0:
-        return "N/A"
-    m = int(seconds // 60)
-    s = seconds % 60
-    return f"{m}:{s:06.3f}"
+_fmt_lap = format_lap_time
 
 
 def _analyze_tyre_compounds(session, selected_drivers):

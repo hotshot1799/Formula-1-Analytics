@@ -6,23 +6,45 @@ import pandas as pd
 import streamlit as st
 
 def session_cache(func):
-    """Cache within the current session only"""
+    """Cache within the current session only.
+
+    The cache key incorporates the function name, the current session
+    identity (year/event/session_type) *and* a hash of the actual
+    arguments so that calls with different inputs are cached separately.
+    """
     from functools import wraps
-    
+    import hashlib, pickle
+
     @wraps(func)
     def wrapper(*args, **kwargs):
-        cache_key = f"{func.__name__}_{st.session_state.get('year')}_{st.session_state.get('event')}_{st.session_state.get('session_type')}"
-        
+        year = st.session_state.get('year')
+        event = st.session_state.get('event')
+        session_type = st.session_state.get('session_type')
+
+        # Only cache when a session is actually loaded
+        if year is None or event is None or session_type is None:
+            return func(*args, **kwargs)
+
+        # Build a deterministic hash of the call arguments
+        try:
+            arg_bytes = pickle.dumps((args, sorted(kwargs.items())))
+            arg_hash = hashlib.md5(arg_bytes).hexdigest()
+        except Exception:
+            # Unhashable args → skip cache
+            return func(*args, **kwargs)
+
+        cache_key = f"{func.__name__}_{year}_{event}_{session_type}_{arg_hash}"
+
         if 'function_cache' not in st.session_state:
             st.session_state.function_cache = {}
-        
+
         if cache_key in st.session_state.function_cache:
             return st.session_state.function_cache[cache_key]
-        
+
         result = func(*args, **kwargs)
         st.session_state.function_cache[cache_key] = result
         return result
-    
+
     return wrapper
 
 def format_lap_time(lap_time):
@@ -169,221 +191,183 @@ def get_season_indicator(year):
         return f"📚 {year} historical data", "info"
 
 def get_position_data_safe(session):
-    """Safely extract position data from session with proper driver identification"""
+    """Safely extract position data from session with proper driver identification.
+
+    Uses vectorized pandas operations instead of row-by-row iteration.
+    """
     try:
         if not hasattr(session, 'laps') or session.laps.empty:
             return None
-        
-        # Check if Position column exists and has data
+
         if 'Position' not in session.laps.columns:
             return None
-        
-        # Get laps with position data
-        position_data = []
-        
-        # Create driver mapping from driver number to driver code/name
-        driver_mapping = {}
-        
-        # Try to get driver info from session results first
-        if hasattr(session, 'results') and not session.results.empty:
-            try:
-                for _, row in session.results.iterrows():
-                    if pd.notna(row.get('DriverNumber')) and pd.notna(row.get('Abbreviation')):
-                        driver_num = str(int(row['DriverNumber']))
-                        driver_mapping[driver_num] = row['Abbreviation']
-                    # Also map abbreviation to itself
-                    if pd.notna(row.get('Abbreviation')):
-                        driver_mapping[row['Abbreviation']] = row['Abbreviation']
-            except Exception:
-                pass
-        
-        # If no results mapping, try to extract from session.laps
-        if not driver_mapping and hasattr(session, 'laps'):
-            try:
-                # Check if we have both DriverNumber and Driver columns
-                if 'DriverNumber' in session.laps.columns and 'Driver' in session.laps.columns:
-                    driver_pairs = session.laps[['DriverNumber', 'Driver']].drop_duplicates()
-                    for _, row in driver_pairs.iterrows():
-                        if pd.notna(row['DriverNumber']) and pd.notna(row['Driver']):
-                            driver_num = str(int(row['DriverNumber']))
-                            driver_mapping[driver_num] = row['Driver']
-                            # Also map driver code to itself
-                            driver_mapping[row['Driver']] = row['Driver']
-            except Exception:
-                pass
-        
-        # Fallback: warn that driver mapping is unavailable
-        if not driver_mapping:
-            st.warning("Driver mapping unavailable — some drivers may show as numbers")
-        
-        # Group by lap number and get position for each driver
-        for lap_num in session.laps['LapNumber'].unique():
-            lap_data = session.laps[session.laps['LapNumber'] == lap_num]
-            
-            for _, lap in lap_data.iterrows():
-                if pd.notna(lap['Position']):
-                    try:
-                        position = int(float(lap['Position']))
-                        
-                        # Get driver identifier - prefer Driver column over DriverNumber
-                        driver_id = None
-                        if 'Driver' in lap and pd.notna(lap['Driver']):
-                            driver_id = lap['Driver']
-                        elif 'DriverNumber' in lap and pd.notna(lap['DriverNumber']):
-                            driver_num = str(int(lap['DriverNumber']))
-                            driver_id = driver_mapping.get(driver_num, driver_num)
-                        
-                        if driver_id:
-                            position_data.append({
-                                'LapNumber': int(lap_num),
-                                'Driver': driver_id,
-                                'Position': position
-                            })
-                    except (ValueError, TypeError):
-                        continue
-        
-        if not position_data:
+
+        # Determine the best driver identifier column
+        has_driver = 'Driver' in session.laps.columns
+        has_driver_number = 'DriverNumber' in session.laps.columns
+
+        if has_driver:
+            cols = ['LapNumber', 'Driver', 'Position']
+        elif has_driver_number:
+            cols = ['LapNumber', 'DriverNumber', 'Position']
+        else:
             return None
-        
-        return pd.DataFrame(position_data)
-        
+
+        position_df = session.laps[cols].dropna(subset=['Position']).copy()
+
+        if position_df.empty:
+            return None
+
+        position_df['Position'] = position_df['Position'].astype(int)
+        position_df['LapNumber'] = position_df['LapNumber'].astype(int)
+
+        # If we only have DriverNumber, map to abbreviation
+        if not has_driver and has_driver_number:
+            driver_mapping = {}
+            if hasattr(session, 'results') and not session.results.empty:
+                valid = session.results.dropna(subset=['DriverNumber', 'Abbreviation'])
+                driver_mapping = dict(zip(
+                    valid['DriverNumber'].astype(int).astype(str),
+                    valid['Abbreviation'],
+                ))
+            position_df['Driver'] = (
+                position_df['DriverNumber']
+                .astype(int).astype(str)
+                .map(driver_mapping)
+                .fillna(position_df['DriverNumber'].astype(str))
+            )
+            position_df = position_df.drop(columns=['DriverNumber'])
+
+        # Drop any rows where Driver ended up NaN
+        position_df = position_df.dropna(subset=['Driver'])
+
+        if position_df.empty:
+            return None
+
+        return position_df[['LapNumber', 'Driver', 'Position']].reset_index(drop=True)
+
     except Exception as e:
-        st.error(f"Error extracting position data: {e}")
         return None
 
 @session_cache
-def calculate_position_changes(position_df):
-    """Calculate position changes throughout the race using starting grid positions"""
+def calculate_position_changes(position_df, session=None):
+    """Calculate position changes throughout the race using starting grid positions.
+
+    Parameters
+    ----------
+    position_df : pd.DataFrame
+        DataFrame with columns LapNumber, Driver, Position.
+    session : fastf1 Session, optional
+        The session object.  If *None*, falls back to
+        ``st.session_state.session`` for backwards compatibility.
+
+    Returns
+    -------
+    dict
+        ``{"data": pd.DataFrame | None, "warnings": list[str]}``
+        The caller is responsible for displaying any warnings.
+    """
+    warnings_list = []
+
     try:
         if position_df is None or position_df.empty:
-            return None
-        
-        # Get session from session_state
-        session = st.session_state.session
-        
-        # Create enhanced driver name mapping
+            return {"data": None, "warnings": warnings_list}
+
+        if session is None:
+            session = st.session_state.get('session')
+        if session is None:
+            return {"data": None, "warnings": ["No session available"]}
+
+        # Build driver name mappings from results
         driver_name_mapping = {}
         driver_full_name_mapping = {}
-        
-        # Try to get driver info from session.results
+
         if hasattr(session, 'results') and not session.results.empty:
             try:
                 for _, row in session.results.iterrows():
-                    # Map driver numbers to abbreviations
                     if pd.notna(row.get('DriverNumber')) and pd.notna(row.get('Abbreviation')):
                         driver_num = str(int(row['DriverNumber']))
                         driver_name_mapping[driver_num] = row['Abbreviation']
-                    
-                    # Map abbreviations to full names
+
                     if pd.notna(row.get('Abbreviation')):
                         driver_code = row['Abbreviation']
                         driver_name_mapping[driver_code] = driver_code
-                        
                         if pd.notna(row.get('FullName')):
                             driver_full_name_mapping[driver_code] = row['FullName']
             except Exception:
                 pass
-        
-        # Fallback: warn that driver name mapping is unavailable
-        if not driver_name_mapping:
-            st.warning("Driver name mapping unavailable — some drivers may show as numbers")
-        
-        # PRIORITY: Use starting grid positions from session.results
+
+        # Determine start & final positions
         start_positions = None
         final_positions = None
-        
+
         if hasattr(session, 'results') and not session.results.empty:
             try:
-                # Get starting grid positions (GridPosition) and final positions (Position)
                 results = session.results
-                
-                # Create mapping from driver abbreviations to positions
                 grid_positions = {}
                 finish_positions = {}
-                
+
                 for _, row in results.iterrows():
                     if pd.notna(row.get('Abbreviation')):
                         driver_code = row['Abbreviation']
-                        
-                        # Starting grid position
+
                         if pd.notna(row.get('GridPosition')):
                             try:
-                                grid_pos = int(row['GridPosition'])
-                                grid_positions[driver_code] = grid_pos
+                                grid_positions[driver_code] = int(row['GridPosition'])
                             except Exception:
                                 pass
-                        
-                        # Final race position
+
                         if pd.notna(row.get('Position')):
                             try:
-                                final_pos = int(row['Position'])
-                                finish_positions[driver_code] = final_pos
+                                finish_positions[driver_code] = int(row['Position'])
                             except Exception:
                                 pass
-                
-                # Convert to pandas Series for consistency
+
                 if grid_positions:
                     start_positions = pd.Series(grid_positions)
-                    st.info(f"📊 Using starting grid positions from race results")
-                    
+                    warnings_list.append("Using starting grid positions from race results")
+
                 if finish_positions:
                     final_positions = pd.Series(finish_positions)
                 else:
-                    # Fallback to position data from lap analysis
                     final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
-                    
+
             except Exception as e:
-                st.warning(f"⚠️ Could not extract grid positions from results: {e}")
-        
-        # FALLBACK: Use position data if no grid positions available
+                warnings_list.append(f"Could not extract grid positions from results: {e}")
+
         if start_positions is None:
-            st.warning("⚠️ No starting grid data available - using first lap positions as fallback")
+            warnings_list.append("No starting grid data available - using first lap positions as fallback")
             start_positions = position_df.groupby('Driver')['Position'].first().dropna().astype(int)
-        
+
         if final_positions is None:
             final_positions = position_df.groupby('Driver')['Position'].last().dropna().astype(int)
-        
+
         # Calculate position changes
-        changes = []
-        
-        # Get common drivers between start and final positions
         common_drivers = set(start_positions.index) & set(final_positions.index)
-        
+        changes = []
+
         for driver in common_drivers:
-            try:
-                start_pos = start_positions.get(driver, None)
-                final_pos = final_positions.get(driver, None)
-                
-                if start_pos is not None and final_pos is not None:
-                    positions_gained = start_pos - final_pos  # Positive = gained positions (lower number is better)
-                    
-                    # Get proper driver name
-                    driver_code = driver_name_mapping.get(driver, driver)
-                    full_name = driver_full_name_mapping.get(driver_code, driver_code)
-                    
-                    changes.append({
-                        'Driver': driver_code,
-                        'Full Name': full_name,
-                        'Start Position': start_pos,
-                        'Final Position': final_pos,
-                        'Positions Gained': positions_gained
-                    })
-            except Exception as e:
-                st.error(f"Error processing driver {driver}: {e}")
-                continue
-        
+            start_pos = start_positions.get(driver)
+            final_pos = final_positions.get(driver)
+
+            if start_pos is not None and final_pos is not None:
+                driver_code = driver_name_mapping.get(driver, driver)
+                full_name = driver_full_name_mapping.get(driver_code, driver_code)
+
+                changes.append({
+                    'Driver': driver_code,
+                    'Full Name': full_name,
+                    'Start Position': start_pos,
+                    'Final Position': final_pos,
+                    'Positions Gained': start_pos - final_pos,
+                })
+
         if not changes:
-            st.error("❌ No position changes could be calculated")
-            return None
-        
-        # Sort by positions gained (most gained first)
+            return {"data": None, "warnings": warnings_list}
+
         changes_df = pd.DataFrame(changes).sort_values('Positions Gained', ascending=False)
-        
-        # Add some debug info
-        st.info(f"📊 Position changes calculated for {len(changes_df)} drivers")
-        
-        return changes_df
-        
+        return {"data": changes_df, "warnings": warnings_list}
+
     except Exception as e:
-        st.error(f"Error calculating position changes: {e}")
-        return None
+        warnings_list.append(f"Error calculating position changes: {e}")
+        return {"data": None, "warnings": warnings_list}

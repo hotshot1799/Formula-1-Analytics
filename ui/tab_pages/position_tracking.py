@@ -57,7 +57,10 @@ def _render_race_positions(session):
     if fig:
         st.plotly_chart(fig, use_container_width=True)
 
-    changes_df = calculate_position_changes(position_df)
+    result = calculate_position_changes(position_df, session)
+    for warning in result.get("warnings", []):
+        st.info(warning)
+    changes_df = result.get("data")
     if changes_df is None or changes_df.empty:
         st.warning("Could not calculate position changes")
         return
