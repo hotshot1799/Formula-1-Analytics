@@ -26,15 +26,15 @@ class FeatureEngineer:
         """
         self.window_size = window_size or MLConfig.FEATURE_WINDOW_RACES
 
+    # Keys used to uniquely identify each row (one per driver per race)
+    _KEY_COLS = ['Year', 'RoundNumber', 'Abbreviation']
+
     def create_driver_form_features(self, results_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create driver form features (recent performance)
+        Create driver form features (recent performance).
 
-        Args:
-            results_df: Race results DataFrame
-
-        Returns:
-            DataFrame with form features
+        Returns a DataFrame keyed on (Year, RoundNumber, Abbreviation) with
+        only the new feature columns plus the keys.
         """
         logger.info("Creating driver form features...")
 
@@ -174,48 +174,36 @@ class FeatureEngineer:
 
     def create_track_history_features(self, results_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Create features based on driver/team performance at specific tracks
+        Create features based on driver performance at specific tracks.
 
-        Args:
-            results_df: Race results
-
-        Returns:
-            DataFrame with track history features
+        Returns a DataFrame keyed on (Year, RoundNumber, Abbreviation) with
+        only the new track-history columns plus the keys.
         """
         logger.info("Creating track history features...")
 
         results_sorted = results_df.sort_values(['Year', 'RoundNumber'])
+        new_cols = {
+            'Driver_Track_AvgPosition': np.nan,
+            'Driver_Track_BestPosition': np.nan,
+            'Driver_Track_Races': 0,
+        }
+        for col, default in new_cols.items():
+            results_sorted[col] = default
 
-        track_features = []
+        for (driver, track), group in results_sorted.groupby(['Abbreviation', 'EventName']):
+            idx = group.index
+            positions = group['Position']
 
-        for driver in results_sorted['Abbreviation'].unique():
-            driver_data = results_sorted[results_sorted['Abbreviation'] == driver].copy()
+            results_sorted.loc[idx, 'Driver_Track_AvgPosition'] = (
+                positions.expanding(min_periods=1).mean().shift(1)
+            )
+            results_sorted.loc[idx, 'Driver_Track_BestPosition'] = (
+                positions.expanding(min_periods=1).min().shift(1)
+            )
+            results_sorted.loc[idx, 'Driver_Track_Races'] = range(len(idx))
 
-            for track in driver_data['EventName'].unique():
-                track_data = driver_data[driver_data['EventName'] == track].copy()
-
-                track_data['Driver_Track_AvgPosition'] = (
-                    track_data['Position']
-                    .expanding(min_periods=1)
-                    .mean()
-                    .shift(1)
-                )
-
-                track_data['Driver_Track_BestPosition'] = (
-                    track_data['Position']
-                    .expanding(min_periods=1)
-                    .min()
-                    .shift(1)
-                )
-
-                track_data['Driver_Track_Races'] = range(len(track_data))
-
-                track_features.append(track_data)
-
-        result = pd.concat(track_features, ignore_index=True)
-        logger.info(f"Created track history features for {len(result)} records")
-
-        return result
+        logger.info(f"Created track history features for {len(results_sorted)} records")
+        return results_sorted
 
     def create_championship_position_features(
         self,
@@ -275,14 +263,11 @@ class FeatureEngineer:
         qual_results: pd.DataFrame
     ) -> pd.DataFrame:
         """
-        Create all features from race and qualifying data
+        Create all features from race and qualifying data.
 
-        Args:
-            race_results: Race results DataFrame
-            qual_results: Qualifying results DataFrame
-
-        Returns:
-            Complete feature DataFrame
+        Each feature-creation step works on the accumulated DataFrame.
+        At the end we deduplicate on (Year, RoundNumber, Abbreviation) to
+        guarantee exactly one row per driver per race.
         """
         logger.info("Starting full feature engineering pipeline...")
 
@@ -300,6 +285,16 @@ class FeatureEngineer:
 
         df['RaceNumber'] = df['RoundNumber']
         df['IsHomeRace'] = 0
+
+        # Guarantee one row per driver per race — drop accidental dupes
+        before = len(df)
+        df = df.drop_duplicates(subset=self._KEY_COLS, keep='last')
+        df = df.reset_index(drop=True)
+        if len(df) < before:
+            logger.warning(
+                f"Dropped {before - len(df)} duplicate rows "
+                f"(keyed on {self._KEY_COLS})"
+            )
 
         logger.info(f"Feature engineering complete. Created {len(df)} samples with {len(df.columns)} features")
 

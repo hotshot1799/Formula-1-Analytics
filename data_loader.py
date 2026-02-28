@@ -9,16 +9,10 @@ import logging
 import warnings
 from datetime import datetime, timezone
 
-import cache_config  # noqa: F401  — initializes FastF1 cache once
+import cache_config  # noqa: F401  — initializes FastF1 cache & Ergast URL
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
-
-# Try alternative Ergast API - fallback to default if fails
-try:
-    fastf1.ergast.interface.BASE_URL = "https://api.jolpi.ca/ergast/f1"
-except Exception as e:
-    logging.warning(f"Could not set custom Ergast URL, using default: {e}")
 
 @st.cache_data(ttl=7200, max_entries=3, show_spinner=False)
 def get_available_years():

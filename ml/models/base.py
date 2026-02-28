@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 class BaseF1Model(ABC):
     """Abstract base class for all F1 prediction models"""
 
+    # Subclasses override this to declare the extra columns they need
+    # beyond the default numeric features (e.g. identifier columns).
+    required_columns: List[str] = []
+
     def __init__(self, name: str):
         """
         Initialize base model
@@ -49,6 +53,35 @@ class BaseF1Model(ABC):
             Predictions array
         """
         pass
+
+    def prepare_input(self, X: pd.DataFrame, meta: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """Combine X and meta into the input this model needs.
+
+        The default implementation returns X as-is.  Models that need
+        identifier columns (listed in ``required_columns``) will merge
+        them from *meta* when they are not already present in *X*.
+        """
+        if not self.required_columns:
+            return X
+
+        missing = [c for c in self.required_columns if c not in X.columns]
+        if not missing:
+            return X
+
+        if meta is None or meta.empty:
+            raise ValueError(
+                f"{self.name} requires columns {missing} but meta is empty"
+            )
+
+        available = [c for c in missing if c in meta.columns]
+        if available:
+            return pd.concat(
+                [X.reset_index(drop=True), meta[available].reset_index(drop=True)],
+                axis=1,
+            )
+        raise ValueError(
+            f"{self.name} requires columns {missing} but they are not in X or meta"
+        )
 
     def evaluate(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
         """

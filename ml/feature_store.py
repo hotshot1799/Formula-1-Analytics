@@ -242,6 +242,7 @@ class FeatureStore:
         ]
 
         features_clean = features.dropna(subset=feature_cols + [target_col])
+        features_clean = features_clean.reset_index(drop=True)
 
         X = features_clean[feature_cols]
         y = features_clean[target_col]
@@ -260,7 +261,7 @@ class FeatureStore:
         logger.info(f"Feature columns: {numeric_feature_count} numeric + "
                     f"{len([c for c in feature_cols if c in metadata_cols])} metadata")
 
-        meta_cols = ['Abbreviation', 'EventName', 'Year']
+        meta_cols = ['Abbreviation', 'EventName', 'Year', 'RoundNumber']
         available_meta_cols = [c for c in meta_cols if c in features_clean.columns]
         meta_train = features_clean[available_meta_cols].iloc[:split_idx]
         meta_test = features_clean[available_meta_cols].iloc[split_idx:]

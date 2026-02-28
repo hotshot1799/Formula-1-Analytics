@@ -54,7 +54,6 @@ class F1MLPipeline:
         self.y_test: Optional[pd.Series] = None
         self.meta_train: Optional[pd.DataFrame] = None
         self.meta_test: Optional[pd.DataFrame] = None
-        self.elo_test: Optional[pd.DataFrame] = None
 
     def transition_to(self, new_state: MLState) -> None:
         """
@@ -165,11 +164,22 @@ class F1MLPipeline:
 
         try:
             self.X_train, self.X_test, self.y_train, self.y_test, self.meta_train, self.meta_test = (
-                self.feature_store.prepare_training_data(self.features)
+                self.feature_store.prepare_training_data(
+                    self.features,
+                    metadata_cols=['Abbreviation', 'Year', 'EventName', 'RoundNumber'],
+                )
             )
 
             logger.info(f"Training set: {len(self.X_train)} samples")
             logger.info(f"Test set: {len(self.X_test)} samples")
+
+            # Validate that metadata contains the columns models need
+            if self.meta_train is None or self.meta_train.empty:
+                logger.error("meta_train is empty after prepare_training_data")
+                return False
+            if 'Abbreviation' not in self.meta_train.columns:
+                logger.error("meta_train missing 'Abbreviation' column")
+                return False
 
             return True
 
@@ -196,13 +206,23 @@ class F1MLPipeline:
                 return False
 
             elo_model = ELOModel()
-            elo_train = pd.concat([self.X_train, self.meta_train], axis=1)
-            elo_model.train(elo_train, self.y_train)
-            self.elo_test = pd.concat([self.X_test, self.meta_test], axis=1)
+            # X_train already contains identifier columns (Abbreviation,
+            # Year, EventName, RoundNumber) because run_store_state passes
+            # metadata_cols.  No need to concat meta_train separately.
+            elo_model.train(self.X_train, self.y_train)
 
             self.models['ELO'] = elo_model
 
             rankings = elo_model.get_current_rankings()
+            if rankings.empty:
+                logger.error("ELO model produced no driver ratings")
+                return False
+
+            rating_values = list(elo_model.ratings.values())
+            if len(set(rating_values)) == 1:
+                logger.error("All drivers stuck at initial rating — ELO updates never ran")
+                return False
+
             logger.info("\nTop 10 ELO Rankings:")
             logger.info(rankings.head(10).to_string(index=False))
 
@@ -238,10 +258,8 @@ class F1MLPipeline:
 
             for model_name, model in self.models.items():
                 logger.info(f"\nEvaluating {model_name}...")
-                if model_name == 'ELO':
-                    y_pred = model.predict(self.elo_test)
-                else:
-                    y_pred = model.predict(self.X_test)
+                test_input = model.prepare_input(self.X_test, self.meta_test)
+                y_pred = model.predict(test_input)
                 predictions[model_name] = y_pred
 
             comparison = self.evaluator.evaluate_multiple_models(
