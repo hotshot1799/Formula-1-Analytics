@@ -9,26 +9,7 @@ from plotly.subplots import make_subplots
 
 # Import the dynamic team colors
 from team_colors import get_driver_color, initialize_session_colors, show_driver_color_legend
-
-def format_lap_time_for_display(lap_time):
-    """Format lap time for chart display"""
-    try:
-        if pd.isna(lap_time):
-            return "N/A"
-        
-        if hasattr(lap_time, 'total_seconds'):
-            total_seconds = lap_time.total_seconds()
-        else:
-            total_seconds = float(lap_time)
-        
-        if total_seconds <= 0 or total_seconds > 600:
-            return "N/A"
-        
-        minutes = int(total_seconds // 60)
-        seconds = total_seconds % 60
-        return f"{minutes}:{seconds:06.3f}"
-    except Exception:
-        return "N/A"
+from analysis_utils import format_lap_time
 
 def create_lap_times_chart(session, selected_drivers):
     """Create lap times chart with dynamic F1 team colors"""
@@ -52,7 +33,7 @@ def create_lap_times_chart(session, selected_drivers):
                 
                 # Create hover text with proper formatting
                 hover_text = [
-                    f"<b>{driver}</b><br>Lap: {lap_num}<br>Time: {format_lap_time_for_display(time_sec)}"
+                    f"<b>{driver}</b><br>Lap: {lap_num}<br>Time: {format_lap_time(time_sec)}"
                     for lap_num, time_sec in zip(lap_numbers, lap_times)
                 ]
                 
